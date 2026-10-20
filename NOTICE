@@ -1,0 +1,12 @@
+Copyright (C) 2026 AixPot
+Norns is licensed under GNU AGPL version 3 only (AGPL-3.0-only); see LICENSE.
+
+Norns — third-party reference notice
+
+The technical references and recorded revisions are listed in SOURCES.md.
+Credits for those projects remain with their respective contributors.
+Dependencies are identified by Cargo.lock and frontend/package-lock.json and
+remain subject to their own copyright notices and license terms.
+
+The third-party references above are attribution, not a license grant for third-party code.
+It does not assert independent implementation or certify redistribution rights.

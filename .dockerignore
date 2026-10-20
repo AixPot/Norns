@@ -1,0 +1,15 @@
+.git
+.agents
+docs/internal
+.env
+.env.*
+!.env.example
+target
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/*.sqlite*
+**/*.db*
+data
+evidence

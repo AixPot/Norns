@@ -1,0 +1,86 @@
+# Norns
+
+面向小团队的中文、多账号任务看板。Rust / Axum / SQLx / SQLite 提供单服务，Svelte / TypeScript 界面由服务端托管。
+
+## 功能
+
+- 管理员创建、停用账号和重置密码；无公开注册或默认密码。
+- 看板成员权限、列表与卡片、跨列移动、归档与恢复；站点管理员不绕过看板成员权限。
+- 负责人、清单、评论、完成状态，以及日期、时间、时区和重复计划。
+- 跨所在看板搜索未归档任务，可组合标题／描述关键词、看板、负责人、完成状态和日期筛选；打开原卡片编辑，返回时保留筛选。
+- 卡片详情自动保存；版本冲突显式处理并保留当前界面的草稿。关闭浏览器不保证保留未保存内容。
+- 桌面拖拽；手机可横向浏览列表并通过移动菜单操作，不要求触屏拖拽。
+- 可选私有 S3 兼容附件、鉴权下载和受限预览；未配置存储时仍可使用其他功能。
+
+适合单实例、小团队。协作使用轻量轮询，不是即时同步；不提供离线队列、多副本、公开分享或密码自助找回。页面刷新、关闭及强制退出可能丢失未保存草稿。
+
+## 搜索与任务视图
+
+进入「任务」可搜索自己所在看板的未归档任务，不会展示无权限看板。关键词按标题和描述的字面子串匹配（`%`、`_` 不是通配符）；负责人选项来自有权限看板中未归档任务的负责人。筛选可组合使用。
+
+- **我的任务**：由当前账号负责的任务；默认也包含已完成任务，可用完成状态进一步筛选。
+- **今天**：按北京时间，任务起止日期与今天相交；含边界，不包含已经结束的逾期任务，默认不排除已完成任务。
+- **即将到期**：未完成且截止日期在北京时间明天至未来第 7 天（含）的任务；范围任务取结束日，不含今天到期或逾期任务。
+- **日期筛选**：任务起止范围与所选日期区间相交即匹配，含边界；支持只填一端，可查询逾期任务，无日期任务不匹配日期筛选。
+
+## 构建
+
+需要 Rust 1.90.0（含 rustfmt、clippy）、Node.js 22、npm。SQLite 编入后端，无需另行运行数据库服务。
+
+```sh
+npm --prefix frontend ci
+npm --prefix frontend run build
+cargo build --release --locked
+```
+
+## 初始化与运行
+
+从项目根目录运行。二进制只读取环境变量，不自动加载 `.env`；变量清单见 [.env.example](.env.example)。以下 Bash 示例仅用于本机 HTTP 开发：
+
+```bash
+umask 077
+mkdir -p data
+chmod 700 data
+export DATABASE_URL="sqlite://$PWD/data/norns.sqlite"
+read -r -s -p '新管理员密码（至少12字节）: ' NORNS_PASSWORD
+printf '\n'
+printf '%s' "$NORNS_PASSWORD" | ./target/release/norns init-admin admin
+unset NORNS_PASSWORD
+export BIND_ADDR=127.0.0.1:3000
+export APP_ORIGIN=http://127.0.0.1:3000
+export COOKIE_SECURE=false
+export STATIC_DIR="$PWD/frontend/dist"
+./target/release/norns
+```
+
+浏览器访问 `http://127.0.0.1:3000`。管理员初始化只在账号表为空时成功。请勿把密码放入命令行参数或使用示例测试账号部署。
+
+正式环境使用 HTTPS 反向代理，将 `APP_ORIGIN` 设为浏览器实际 origin（不带尾斜杠），并保持 `COOKIE_SECURE=true`。后端监听受保护的本机地址，不直接对外暴露。`COOKIE_SECURE=false` 仅允许 loopback 绑定。保护数据库目录、备份和服务端密钥；会话与写请求受 Origin / CSRF 校验，不支持跨域 API。单个数据库和存储前缀只运行一个实例。
+
+## 私有附件
+
+五个 `S3_*` 变量全部留空可关闭附件；部分填写会拒绝启动。配置 `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY_ID` 和 `S3_SECRET_ACCESS_KEY`；凭据只注入后端，禁止放入 `VITE_*` 或提交到 Git。应用不创建桶、不修复 ACL；部署者必须确认桶是私有的，并限制应用 key 的对象访问权限。
+
+浏览器签名 PUT 需要桶 CORS 精确允许 `APP_ORIGIN`、PUT 和实际请求头（包括 Content-Type）；下载经同源鉴权代理，不需要开放浏览器 GET。默认单文件上限 16 MiB、看板配额 256 MiB，可通过 `.env.example` 中的附件变量调整，单文件最大 64 MiB。
+
+对于保留历史版本的存储，DeleteObject 不保证物理清除旧版本。为 `norns/staging/` 设置上传残留与历史版本清理，为 `norns/final/` 仅清理非当前或已删除版本；**不要给仍有效的 final 当前版本设置无条件到期**。同时备份 SQLite 和对象，不要清空待处理的清理 outbox。
+
+PDF 仅第一页受限预览；音视频支持取决于浏览器编解码器。没有转码或杀毒功能。Range 仍可能从存储读取完整受限文件，不适合大视频。
+
+## 开发与测试
+
+```sh
+sh scripts/verify.sh
+# 已构建 release 后端与前端后：
+python3 tests/http_smoke.py
+```
+
+`verify.sh` 安装锁定前端依赖，执行前端单元测试、类型检查、构建、Rust 格式检查、clippy、后端测试与 release 构建。
+
+当前浏览器回归及可选存储测试的依赖、隔离规则和命令见 [测试说明](docs/testing.md)。这些测试仅使用自己创建的数据；不要传入生产数据库或生产桶。
+
+技术参考与第三方归属见 [SOURCES.md](SOURCES.md) 和 [NOTICE](NOTICE)。
+
+## 许可证
+
+Norns 采用 [AGPL-3.0-only](LICENSE)。第三方组件各自的许可及归属继续适用，见 [SOURCES.md](SOURCES.md) 和 [NOTICE](NOTICE)。通过网络提供修改版服务时，须遵守 AGPL 第 13 节的对应源码提供义务；部署应保留明显的[源码链接](https://github.com/AixPot/Norns)，并提供实际运行修改版的对应源码。
