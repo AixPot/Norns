@@ -1,17 +1,21 @@
 <script lang="ts">
+ import type {Snippet} from 'svelte';
+ import {cardSlots,slotKey} from './drag-order.mjs';
  import {onMount,untrack,tick} from 'svelte';
  import './task-panel.css';
  import ScheduleEditor from './ScheduleEditor.svelte';
  import Attachments from './Attachments.svelte';
  import {positionPanel} from './panel-position.mjs';
- import type {Board,Draft} from './types';
- type Props={draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
- let {draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
+ import type {Board,Draft,Card} from './types';
+ type Props={feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
+ let {feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
  let panel:HTMLDivElement,body:HTMLDivElement;let titleInput=$state<HTMLInputElement>(),descriptionInput=$state<HTMLTextAreaElement>();
  let editor=$state(''),more=$state(false),localError=$state(''),composing=$state(false);
  let position=$state({left:12,top:12}),viewport=$state({height:0,top:0,mobile:false});
- let target=$state(untrack(()=>draft.list_id)),index=$state(0),newItem=$state(''),comment=$state(''),renaming=$state(0),itemTitle=$state('');
+ let target=$state(untrack(()=>draft.list_id)),index=$state(''),newItem=$state(''),comment=$state(''),renaming=$state(0),itemTitle=$state('');
  let attachments=$state<Attachments|null>(null),actionPending=$state(false);
+ const moveSlots=$derived(cardSlots(board,draft.id,Number(target)));
+ const selectedSlot=$derived(moveSlots.find((s:any)=>slotKey(s)===index)||moveSlots[0]);
  const items=$derived(board.checklist.filter(i=>i.card_id===draft.id));
  const comments=$derived(board.comments.filter(c=>c.card_id===draft.id));
  const remote=$derived(review?.cards.find(c=>c.id===draft.id));
@@ -33,7 +37,7 @@
  }
  onMount(()=>{
   panel.focus({preventScroll:true});growDescription();layout();const observer=new ResizeObserver(layout);observer.observe(panel);
-  const outside=(e:PointerEvent)=>{const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.card,.archived-card')&&!composing)onclose()};
+  const outside=(e:PointerEvent)=>{const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.card,.archived-card,.calendar-view button,.calendar-view select,.completion-toast')&&!composing)onclose()};
   const keyboard=(e:KeyboardEvent)=>{
    if(e.isComposing||composing)return;
    if(e.key==='Escape'){e.preventDefault();if(more)more=false;else onclose()}
@@ -58,7 +62,7 @@
   if((newItem.trim()||comment.trim()||renaming)&&!confirm('还有未发送的评论或清单编辑。放弃这些输入并继续？'))return false;
   return true;
  }
- async function action(data:Record<string,unknown>){actionPending=true;try{return await onaction(data)}catch(e){localError=e instanceof Error?e.message:'操作失败，请重试';return false}finally{actionPending=false}}
+ async function action(data:Record<string,unknown>){if(actionPending)return false;actionPending=true;try{return await onaction(data)}catch(e){localError=e instanceof Error?e.message:'操作失败，请重试';return false}finally{actionPending=false}}
  async function addItem(){const sent=newItem;if(await action({action:'checklist_create',title:sent})&&newItem===sent)newItem=''}
  async function postComment(){const sent=comment;if(await action({action:'comment_create',body:sent})&&comment===sent)comment=''}
 </script>
@@ -68,12 +72,12 @@
  <div class="task-panel-top">
   <header class="task-panel-head"><span class="eyebrow">卡片 #{draft.id}</span><span class="task-save" role="status" aria-live="polite">{saveState==='saving'?'保存中…':saveState==='pending'?'待保存':saveState==='error'||saveState==='conflict'||saveState==='invalid'?'未保存':'已保存'}</span><button class="tool-button" aria-label="关闭卡片" title="关闭卡片 (Esc)" onclick={onclose}>{@render glyph('m6 6 12 12M6 18 18 6')}</button></header>
   <div class="task-toolbar" role="toolbar" aria-label="卡片顶部操作">
-   <button class="completion-button" disabled={busy||draft.archived} onclick={()=>action({action:'card_complete',completed:!draft.completed})}>{draft.completed?'撤销完成':'完成任务'}</button>
+   <button class="completion-button" disabled={actionPending||composing||draft.archived} onclick={()=>action({action:'card_complete',completed:!draft.completed})}>{draft.completed?'撤销完成':'完成任务'}</button>
    <button class="text-button" aria-label="设置日期和重复" onclick={()=>openEditor('schedule')}>日期{draft.due_date?` · ${draft.due_date}`:''}</button>
    {#each tools.filter(t=>['checklist','attachment'].includes(t.id)) as tool}<button class="tool-button" class:active={editor===tool.id} aria-label={tool.label} aria-expanded={editor===tool.id} aria-controls={`editor-${tool.id}`} data-tooltip={tool.label} title={tool.label} onclick={()=>openEditor(tool.id)}>{@render glyph(tool.path)}</button>{/each}
    <div class="task-more"><button class="tool-button" aria-label="更多操作" title="更多操作" data-tooltip="更多操作" aria-expanded={more} onclick={()=>more=!more}>{@render glyph('M5 12h.01M12 12h.01M19 12h.01')}</button>{#if more}<div class="task-more-menu"><button onclick={()=>{draft.archived=!draft.archived;onchange(true);more=false}}>{draft.archived?'恢复卡片':'归档卡片'}</button></div>{/if}</div>
   </div>
-  {#if saveState==='error'||saveState==='conflict'}<div class="task-alert" role="alert"><strong>{saveState==='conflict'?'版本冲突，输入已保留。':'保存失败，输入已保留。'}</strong><p>{saveError}</p>{#if saveState==='conflict'}<button onclick={onreview}>查看最新版本并处理</button>{:else}<button onclick={onretry}>重试保存</button>{/if}</div>{/if}
+  {#if saveState==='error'||saveState==='conflict'}<div class="task-alert" role="alert"><strong>{saveState==='conflict'?'版本冲突，输入已保留。':'保存失败，输入已保留。'}</strong><p>{saveError}</p>{#if saveState==='conflict'}<button onclick={onreview}>查看最新版本并处理</button>{:else}<button onclick={onretry}>重试保存</button><button onclick={onreview}>查看最新版本并核对</button>{/if}</div>{/if}
   {#if localError}<div class="task-alert" role="alert">{localError}<button onclick={()=>localError=''}>知道了</button></div>{/if}
  </div>
  <div class="task-panel-body" bind:this={body}>
@@ -83,7 +87,7 @@
   <textarea class="content-description" bind:this={descriptionInput} aria-label="描述" placeholder="添加描述…" rows="6" maxlength="20000" bind:value={draft.description} oninput={()=>onchange()} onblur={onblur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}></textarea>
   {#if editor==='schedule'}<ScheduleEditor value={draft.scheduleInput} completed={draft.completed} onchange={()=>onchange()} {onblur}/>{/if}
   {#if editor==='people'}<section id="editor-people" data-editor="people" class="task-editor move-fields"><label>负责人<select aria-label="负责人" value={draft.assignee_id??''} onchange={e=>{draft.assignee_id=e.currentTarget.value?Number(e.currentTarget.value):null;onchange(true)}}><option value="">未分配</option>{#each board.members.filter(m=>m.active||m.user_id===draft.assignee_id) as member}<option value={member.user_id} disabled={!member.active}>{member.username}{member.active?'':' · 已停用'}</option>{/each}</select></label></section>{/if}
-  {#if editor==='move'}<section id="editor-move" data-editor="move" class="task-editor"><h3>移动卡片</h3><div class="move-fields"><label>目标列表<select aria-label="目标列表" bind:value={target} onchange={()=>index=0}>{#each board.lists as list}<option value={list.id}>{list.title}</option>{/each}</select></label><label>插入位置<select aria-label="插入位置" bind:value={index}>{#each Array(board.cards.filter(c=>!c.archived&&c.list_id===Number(target)&&c.id!==draft.id).length+1) as _,i}<option value={i}>{i===0?'最前面':`第 ${i+1} 位`}</option>{/each}</select></label></div><button disabled={busy||draft.archived} onclick={()=>action({action:'card_move',target_list_id:Number(target),index:Number(index)})}>移动到此位置</button></section>{/if}
+  {#if editor==='move'}<section id="editor-move" data-editor="move" class="task-editor"><h3>移动卡片</h3><p class="muted">未完成在前、已完成在后；移动修改真实顺序，取消完成后沿用最新顺序。</p><div class="move-fields"><label>目标列表<select aria-label="目标列表" bind:value={target} onchange={()=>index=''}>{#each board.lists as list}<option value={list.id}>{list.title}</option>{/each}</select></label><label>插入位置<select aria-label="插入位置" value={slotKey(selectedSlot)} onchange={e=>index=e.currentTarget.value}>{#each moveSlots as slot}<option value={slotKey(slot)}>{slot.beforeId?`在「${board.cards.find(c=>c.id===slot.beforeId)?.title}」前（同完成分组内）`:'列表末尾（同完成分组内）'}</option>{/each}</select></label></div><button disabled={busy||draft.archived} onclick={()=>action({action:'card_move',move_slot:selectedSlot,move_revision:board.revision})}>移动到此位置</button></section>{/if}
   <Attachments bind:this={attachments} boardId={board.id} cardId={draft.id} editing={editor==='attachment'}/>
   {#if items.length||editor==='checklist'}<section class="task-section" id="editor-checklist" data-editor="checklist"><h3>清单 <span class="muted">{items.filter(i=>i.checked).length}/{items.length}</span></h3>
    {#each items as item,i (item.id)}<div class="task-checklist-row"><label class="checkbox"><input type="checkbox" aria-label={`完成 ${item.title}`} checked={item.checked} disabled={actionPending} onchange={async e=>{const input=e.currentTarget;if(!await action({action:'checklist_update',item_id:item.id,title:item.title,checked:input.checked}))input.checked=item.checked}}/><span>{item.title}</span></label><button class="tool-button" aria-label={`编辑清单 ${item.id}`} title="编辑条目" onclick={()=>{renaming=item.id;itemTitle=item.title}}>{@render glyph('m4 16 12-12 4 4L8 20H4v-4')}</button></div>
@@ -96,4 +100,5 @@
  <div class="task-panel-bottom" role="toolbar" aria-label="卡片底部操作">
  {#each tools.filter(t=>['people','comment','move'].includes(t.id)) as tool}<button class="tool-button" class:move-tool={tool.id==='move'} class:active={editor===tool.id} aria-label={tool.label} title={tool.label} aria-expanded={editor===tool.id} onclick={()=>openEditor(tool.id)}>{@render glyph(tool.path)}</button>{/each}
  </div>
+ {@render feedback?.()}
 </div>

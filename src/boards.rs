@@ -233,6 +233,10 @@ pub enum Action {
         list_id: i64,
         title: String,
     },
+    ListMove {
+        list_id: i64,
+        index: usize,
+    },
     CardCreate {
         list_id: i64,
         title: String,
@@ -509,6 +513,28 @@ pub async fn mutate(
                 .bind(card_id)
                 .execute(&mut *tx)
                 .await?;
+        }
+        Action::ListMove { list_id, index } => {
+            require_list(&mut tx, id, list_id).await?;
+            let mut ids: Vec<i64> = sqlx::query_scalar(
+                "SELECT id FROM lists WHERE board_id=? AND id<>? ORDER BY position,id",
+            )
+            .bind(id)
+            .bind(list_id)
+            .fetch_all(&mut *tx)
+            .await?;
+            if index > ids.len() {
+                return Err(error::invalid());
+            }
+            ids.insert(index, list_id);
+            for (position, list) in ids.into_iter().enumerate() {
+                sqlx::query("UPDATE lists SET position=? WHERE board_id=? AND id=?")
+                    .bind(position as i64)
+                    .bind(id)
+                    .bind(list)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
         Action::CardMove {
             card_id,

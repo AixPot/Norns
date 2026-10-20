@@ -2287,3 +2287,210 @@ async fn discovery_metadata_is_unfiltered_and_revocation_scoped() {
     let (_, v, _) = call(&app, "GET", "/api/tasks", json!({}), &c, &t).await;
     assert_eq!(v, json!({"tasks":[],"boards":[],"people":[]}));
 }
+
+#[tokio::test]
+async fn list_move_persistence_cas_scope_and_atomic_rollback() {
+    let (_d, url, app, c, t) = fixture().await;
+    let mut b = board(&app, &c, &t, "List ordering").await;
+    for title in ["A", "B", "C"] {
+        apply(
+            &app,
+            &c,
+            &t,
+            &mut b,
+            json!({"action":"list_create","title":title}),
+        )
+        .await;
+    }
+    let a = b["lists"][0]["id"].clone();
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut b,
+        json!({"action":"card_create","list_id":a,"title":"Untouched"}),
+    )
+    .await;
+    let cards = b["cards"].clone();
+    let old = b.clone();
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut b,
+        json!({"action":"list_move","list_id":a,"index":2}),
+    )
+    .await;
+    assert_eq!(
+        b["lists"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["title"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["B", "C", "A"]
+    );
+    assert_eq!(b["cards"], cards);
+    assert_eq!(
+        mutate(
+            &app,
+            &c,
+            &t,
+            &old,
+            json!({"action":"list_move","list_id":a,"index":0})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    for index in [json!(3), json!(-1), json!(0.5)] {
+        assert!(
+            mutate(
+                &app,
+                &c,
+                &t,
+                &b,
+                json!({"action":"list_move","list_id":a,"index":index})
+            )
+            .await
+            .0
+            .is_client_error()
+        );
+    }
+    let mut foreign = board(&app, &c, &t, "Foreign").await;
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut foreign,
+        json!({"action":"list_create","title":"Other"}),
+    )
+    .await;
+    assert!(
+        mutate(
+            &app,
+            &c,
+            &t,
+            &b,
+            json!({"action":"list_move","list_id":foreign["lists"][0]["id"],"index":0})
+        )
+        .await
+        .0
+        .is_client_error()
+    );
+    let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
+    sqlx::query("CREATE TRIGGER fail_list_sort BEFORE UPDATE OF position ON lists WHEN NEW.position=1 BEGIN SELECT RAISE(ABORT,'synthetic failure'); END").execute(&pool).await.unwrap();
+    assert_eq!(
+        mutate(
+            &app,
+            &c,
+            &t,
+            &b,
+            json!({"action":"list_move","list_id":a,"index":0})
+        )
+        .await
+        .0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let path = format!("/api/boards/{}", b["id"]);
+    assert_eq!(call(&app, "GET", &path, json!({}), &c, &t).await.1, b);
+    sqlx::query("DROP TRIGGER fail_list_sort")
+        .execute(&pool)
+        .await
+        .unwrap();
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut b,
+        json!({"action":"list_move","list_id":a,"index":0}),
+    )
+    .await;
+    for (i, l) in b["lists"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(l["position"], json!(i));
+    }
+    let stale = b.clone();
+    let (x, y) = tokio::join!(
+        mutate(
+            &app,
+            &c,
+            &t,
+            &stale,
+            json!({"action":"list_move","list_id":a,"index":1})
+        ),
+        mutate(
+            &app,
+            &c,
+            &t,
+            &stale,
+            json!({"action":"list_move","list_id":a,"index":2})
+        )
+    );
+    assert!(
+        (x.0 == StatusCode::OK && y.0 == StatusCode::CONFLICT)
+            || (y.0 == StatusCode::OK && x.0 == StatusCode::CONFLICT)
+    );
+    b = if x.0 == StatusCode::OK { x.1 } else { y.1 };
+    pool.close().await;
+    let reopened = norns::app(&url, ORIGIN, false).await;
+    assert_eq!(call(&reopened, "GET", &path, json!({}), &c, &t).await.1, b);
+    let (_, u, _) = call(
+        &app,
+        "POST",
+        "/api/admin/users",
+        json!({"username":"sort-member","password":"synthetic-password-456"}),
+        &c,
+        &t,
+    )
+    .await;
+    let (mc, mt) = login_as(&app, "sort-member", "synthetic-password-456").await;
+    assert_eq!(
+        mutate(
+            &app,
+            &mc,
+            &mt,
+            &b,
+            json!({"action":"list_move","list_id":a,"index":0})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut b,
+        json!({"action":"member_set","username":"sort-member","role":"member"}),
+    )
+    .await;
+    apply(
+        &app,
+        &mc,
+        &mt,
+        &mut b,
+        json!({"action":"list_move","list_id":a,"index":0}),
+    )
+    .await;
+    apply(
+        &app,
+        &c,
+        &t,
+        &mut b,
+        json!({"action":"member_remove","user_id":u["id"]}),
+    )
+    .await;
+    assert_eq!(
+        mutate(
+            &app,
+            &mc,
+            &mt,
+            &b,
+            json!({"action":"list_move","list_id":a,"index":0})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(call(&app, "GET", &path, json!({}), &c, &t).await.1, b);
+}

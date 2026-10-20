@@ -28,7 +28,7 @@ try{
   await action(p,board.id,{action:'card_details',card_id:b.cards[0].id,assignee_id:1,due_date:'2028-02-29'});
  }
  await p.reload();await p.getByRole('button',{name:'任务',exact:true}).click();await results(p,2);
- assert.equal(await p.getByRole('link',{name:'源代码',exact:true}).getAttribute('href'),'https://github.com/AixPot/Norns');
+ assert.equal(await p.locator('.topbar').getByRole('link',{name:'源代码',exact:true}).count(),0);
  await p.getByLabel('任务关键词',{exact:true}).fill('needle 100%_');await results(p,2);
  await p.getByLabel('筛选看板',{exact:true}).selectOption('1');await results(p,1);
  await p.getByLabel('筛选负责人',{exact:true}).selectOption('1');await p.getByLabel('完成状态',{exact:true}).selectOption('incomplete');await p.getByLabel('筛选开始日期',{exact:true}).fill('2028-02-29');await p.getByLabel('筛选结束日期',{exact:true}).fill('2028-02-29');await results(p,1);

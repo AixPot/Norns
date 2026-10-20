@@ -69,7 +69,8 @@ try{
  await p.reload();await p.getByRole('button',{name:/轻量详情验收/}).click();await p.getByRole('group',{name:'直接编辑',exact:true}).first().waitFor();
  assert.equal((await snapshot(p)).cards.find(c=>c.id===1).completed,true);checks.push('rich date range + endpoint times + interval/count saved; successor atomic, inherited reset checklist, comments excluded, safe undo and reload');
  // Touch successor using real API, then stale UI's explicit refresh and blocked undo.
- await action(p,{action:'comment_create',card_id:successor.id,body:'后续已有处理'});await p.getByRole('button',{name:'刷新看板',exact:true}).click();await p.getByRole('group',{name:'直接编辑',exact:true}).first().locator('.card-content').click();
+ // Completion is now displayed after its incomplete successor; target the completed predecessor explicitly.
+ await action(p,{action:'comment_create',card_id:successor.id,body:'后续已有处理'});await p.getByRole('button',{name:'刷新看板',exact:true}).click();await p.getByRole('group',{name:'直接编辑',exact:true}).filter({has:p.locator('.card-content.completed')}).locator('.card-content').click();
  await p.getByRole('button',{name:'撤销完成',exact:true}).click();await p.getByText(/下一次任务已有修改或处理/).waitFor();assert.equal((await snapshot(p)).cards.find(c=>c.id===1).completed,true);assert.ok((await snapshot(p)).comments.some(c=>c.body==='后续已有处理'));await p.screenshot({path:evidence+'/blocked-undo.png'});checks.push('touched successor explicit actionable warning, no silent deletion');
  // Guard semantic error does not trap text autosave or other actions.
  await p.getByRole('button',{name:'更多操作',exact:true}).click();await p.getByRole('button',{name:'归档卡片',exact:true}).click();await waitBoard(p,b=>b.cards.find(c=>c.id===1).archived);assert.equal((await snapshot(p)).cards.find(c=>c.id===1).archived,true);assert.equal((await snapshot(p)).cards.find(c=>c.id===1).completed,true);
