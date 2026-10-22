@@ -1,5 +1,7 @@
 <script lang="ts">
  import BrandMark from './BrandMark.svelte';
+ import Wordmark from './Wordmark.svelte';
+ import AppearancePicker from './AppearancePicker.svelte';
  import {onMount,onDestroy,untrack} from 'svelte';
  import {api,ApiError,setCsrf,onUnauthorized} from './api';
  import type {User,Board,BoardSummary,Card,Draft,TaskResult,TaskFilters,TaskDiscoveryResponse,TransferPreview} from './types';
@@ -139,10 +141,10 @@
  onMount(()=>{
   onUnauthorized(clearSession);
   let storage:Storage|undefined;try{storage=localStorage}catch{}
-  theme=createTheme({storage,media:matchMedia('(prefers-color-scheme: dark)'),apply:(value:string,preference:string,palette:string)=>{themePreference=preference;themePalette=palette;document.documentElement.dataset.palette=palette;const favicon=document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');if(favicon)favicon.href=`/brand/favicon-${palette}-${value}.svg`;document.documentElement.classList.add('theme-changing');document.documentElement.dataset.theme=value;requestAnimationFrame(()=>requestAnimationFrame(()=>document.documentElement.classList.remove('theme-changing')));document.documentElement.style.colorScheme=value;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim())}});
+  theme=createTheme({storage,media:matchMedia('(prefers-color-scheme: dark)'),apply:(value:string,preference:string,palette:string)=>{themePreference=preference;themePalette=palette;document.documentElement.dataset.palette=palette;const favicon=document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');if(favicon)favicon.href=`/brand/favicon-${palette}-${value}.svg`;document.documentElement.dataset.theme=value;document.documentElement.style.colorScheme=value;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim())}});
   const external=(e:StorageEvent)=>theme?.external(e.key,e.newValue);window.addEventListener('storage',external);
-  void (async()=>{try{const me=await api<{user:User;csrf:string}>('/me');authenticated(me);await Promise.all([loadBoards(),loadInbox()])}catch(e){if(!(e instanceof ApiError&&e.status===401))fail(e)}finally{ready=true}})();
-  return()=>{onUnauthorized(null);theme?.stop();window.removeEventListener('storage',external)};
+  void (async()=>{try{const me=await api<{user:User;csrf:string}>('/me');authenticated(me);await Promise.all([loadBoards(),loadInbox()])}catch(e){if(!(e instanceof ApiError&&e.status===401))fail(e)}finally{ready=true;requestAnimationFrame(()=>requestAnimationFrame(()=>document.documentElement.classList.add('theme-ready')))}})();
+  return()=>{onUnauthorized(null);theme?.stop();document.documentElement.classList.remove('theme-ready');window.removeEventListener('storage',external)};
  });
  async function login(){busy=true;error='';try{const result=await api<{user:User;csrf:string}>('/login','POST',{username,password});authenticated(result);password='';await Promise.all([loadBoards(),loadInbox()])}catch(e){fail(e)}finally{busy=false}}
  async function logout(){busy=true;try{await api('/logout','POST',{});clearSession()}catch(e){fail(e)}finally{busy=false}}
@@ -319,12 +321,12 @@
 <svelte:window onbeforeunload={e=>{if(writer?.pending()||autosave?.pending()||detailRef?.hasPending()){e.preventDefault();e.returnValue=''}}}/>
 {#if !ready}<main class="login-shell"><p>正在连接 Norns…</p></main>
 {:else if !user}
-<main class="login-shell"><section class="login-card"><a class="brand" href="/"><BrandMark/>Norns</a><div class="login-copy"><span class="eyebrow">让工作井然有序</span><h1>专注下一步。</h1><p>把想法变成卡片，让进展清晰可见。</p></div>{#if error}<div class="alert" role="alert">{error}</div>{/if}<form onsubmit={e=>{e.preventDefault();void login()}}><label>用户名<input aria-label="用户名" bind:value={username} autocomplete="username" required/></label><label>密码<input aria-label="密码" type="password" bind:value={password} autocomplete="current-password" required/></label><button class="primary full" disabled={busy}>{busy?'正在登录…':'登录 Norns'}</button></form><div class="login-themes">{@render themeControls()}</div><p class="login-note">账号由管理员创建 · 仅成员可访问看板 · <a href="https://github.com/AixPot/Norns" target="_blank" rel="noopener noreferrer">源代码</a></p></section></main>
+<main class="login-shell"><section class="login-card"><a class="brand" href="/"><BrandMark/><Wordmark/></a><div class="login-copy"><span class="eyebrow">让工作井然有序</span><h1>专注下一步。</h1><p>把想法变成卡片，让进展清晰可见。</p></div>{#if error}<div class="alert" role="alert">{error}</div>{/if}<form onsubmit={e=>{e.preventDefault();void login()}}><label>用户名<input aria-label="用户名" bind:value={username} autocomplete="username" required/></label><label>密码<input aria-label="密码" type="password" bind:value={password} autocomplete="current-password" required/></label><button class="primary full" disabled={busy}>{busy?'正在登录…':'登录 Norns'}</button></form><div class="login-themes">{@render themeControls()}</div><p class="login-note">账号由管理员创建 · 仅成员可访问看板 · <a href="https://github.com/AixPot/Norns" target="_blank" rel="noopener noreferrer">源代码</a></p></section></main>
 {:else}
 <div class="app-shell three-pane-shell">
  <aside class="function-rail" aria-label="功能栏">{@render functions()}</aside>
  <aside class="three-pane-nav" aria-label="任务与清单导航">{@render navigation()}</aside>
- <header class="mobile-navigation"><button aria-label="打开导航" onclick={showDrawer}>☰</button><strong class="mobile-brand"><BrandMark size={26}/>Norns</strong><span>{user.username}</span></header>
+ <header class="mobile-navigation"><button aria-label="打开导航" onclick={showDrawer}>☰</button><strong class="mobile-brand"><BrandMark size={26}/><Wordmark height={22}/></strong><span>{user.username}</span></header>
 <main class="workspace">{#if uncertainScope}<div class="alert" role="status">写入结果未知，未自动重放。请先核对服务器状态。<button onclick={recoverWriter}>只读核对最新版本并明确恢复</button></div>{/if}{#if error}<div class="alert" role="alert">{error}</div>{/if}
 {#if view==='users'}<Users onerror={fail}/>
 {:else if view==='smart'}{#if smartRoute==='inbox'}<div class="inbox-history-control"><button onclick={()=>inboxArchive?routeTo('inbox'):showInboxArchive()}>{inboxArchive?'返回收集箱':'已归档'}</button></div>{/if}{#if inboxArchive&&inboxHistory}<section class="inbox-history"><h1>收集箱 · 已归档</h1><p class="muted">仅你可见。打开后可恢复，也可确认整链转入普通看板。</p>{#each inboxHistory.cards.filter(c=>c.archived) as c}<button class="archived-card" onclick={async e=>{const element=e.currentTarget;if(!await leaveDraft())return;board=inboxHistory;writer=null;await edit(c,element)}}>{c.title}<span>打开 →</span></button>{:else}<p class="empty-note">还没有归档的任务。</p>{/each}</section>{:else}{#key `${user.id}:${smartRoute}`}<SmartTasks bind:this={smartRef} route={smartRoute} inboxId={inbox?.id||0} refresh={taskRefresh} {pendingCards} onopen={openTask} oncomplete={completeTask} onquick={quickInbox} onmetadata={metadata} onerror={fail}/>{/key}{/if}
@@ -351,7 +353,7 @@
  <div class="rail-bottom"><span class="rail-account" title={user?.username}>{user?.username.slice(0,2)}</span>{@render themeControls()}{#if user?.is_admin}<button aria-label="账号管理" title="账号管理" onclick={()=>routeTo('users')}>{@render icon('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M17 8h5M19.5 5.5v5')}</button>{/if}<button aria-label="退出" title="退出" disabled={busy} onclick={()=>navigate(logout)}>{@render icon('M9 3H4v18h5M12 12h10m-4-4 4 4-4 4')}</button></div>
 {/snippet}
 {#snippet navigation()}
- <div class="nav-brand"><BrandMark/>Norns</div><nav class="smart-navigation" aria-label="智能视图">{#each [['today','今天'],['tomorrow','明天'],['next7','最近七天'],['mine','指派给我'],['inbox','收集箱']] as [route,label]}<button class:active={view==='smart'&&smartRoute===route} onclick={()=>routeTo(route)}><span>{label}</span></button>{/each}</nav>
+ <div class="nav-brand"><Wordmark/></div><nav class="smart-navigation" aria-label="智能视图">{#each [['today','今天'],['tomorrow','明天'],['next7','最近七天'],['mine','指派给我'],['inbox','收集箱']] as [route,label]}<button class:active={view==='smart'&&smartRoute===route} onclick={()=>routeTo(route)}><span>{label}</span></button>{/each}</nav>
  <div class="lists-heading"><span>清单</span><button aria-label="添加清单" title="添加清单" onclick={()=>navigate(()=>{creatingBoard=!creatingBoard})}>＋</button></div>
  {#if creatingBoard}<form class="sidebar-create" onsubmit={e=>{e.preventDefault();void navigate(createBoard)}}><label>看板名称<input aria-label="看板名称" placeholder="清单名称" bind:value={boardTitle} required maxlength="100"/></label><button class="primary" disabled={busy}>创建看板</button></form>{/if}
  <nav class="board-navigation" aria-label="清单">{#each boards as b}<button class:active={view==='boards'&&board?.id===b.id} onclick={()=>navigate(()=>openBoard(b.id))}><span class="board-symbol" aria-hidden="true">▤</span><span>{b.title}</span></button>{:else}<p class="muted">暂无看板，可添加或请管理员邀请。</p>{/each}</nav>
@@ -360,6 +362,5 @@
 {#if transferOpen&&user}<TransferDialog {boards} onload={id=>api<Board>(`/boards/${id}`)} onpreview={transferPreview} oncommit={finishTransfer} onverify={()=>transferCommand!.verify()} onrecover={recoverTransfer} onclose={()=>{transferOpen=false;transferCommand=null}}/>{/if}
 
 {#snippet themeControls()}
- <label class="theme-label">配色<select aria-label="配色" value={themePalette} onchange={e=>theme?.setPalette(e.currentTarget.value)}><option value="blue">雾蓝</option><option value="iris">鸢尾</option><option value="clay">陶橙</option><option value="graphite">石墨</option></select></label>
- <label class="theme-label">明暗<select aria-label="主题" value={themePreference} onchange={e=>theme?.set(e.currentTarget.value)}><option value="light">浅色</option><option value="dark">深色</option><option value="system">系统</option></select></label>
+ <AppearancePicker palette={themePalette} mode={themePreference} onpalette={value=>theme?.setPalette(value)} onmode={value=>theme?.set(value)}/>
 {/snippet}

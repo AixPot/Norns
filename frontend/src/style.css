@@ -20,7 +20,7 @@
 .function-rail button,.drawer-functions button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;padding:8px 4px;width:48px;color:var(--secondary);font-size:10px}
 .function-rail button.active,.drawer-functions button.active{background:var(--accent-soft);color:var(--accent-text)}
 .function-rail .rail-logo,.drawer-functions .rail-logo{font-size:26px;font-weight:750;letter-spacing:-2px;color:var(--accent);margin-bottom:20px}
-.rail-bottom{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}.rail-account{display:grid;place-items:center;border-radius:50%;background:var(--surface-muted);width:34px;height:34px;font-size:11px;font-weight:650}.theme-label{font-size:10px;text-align:center;gap:3px;width:100%;font-weight:400}.theme-label select{font-size:10px;padding:3px 0;min-height:44px;border:1px solid var(--border);background:var(--surface);width:100%}
+.rail-bottom{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}.rail-account{display:grid;place-items:center;border-radius:50%;background:var(--surface-muted);width:34px;height:34px;font-size:11px;font-weight:650}
 .three-pane-nav{position:sticky;top:0;height:100dvh;overflow-y:auto;padding:28px 16px;border-right:1px solid var(--border);background:var(--surface-muted)}
 .nav-brand{font-size:23px;font-weight:750;letter-spacing:-1px;padding:0 12px 28px;display:flex;align-items:center;gap:10px}.smart-navigation,.board-navigation{display:flex;flex-direction:column;gap:4px}.smart-navigation button,.board-navigation button{text-align:left;border:0;background:transparent;color:var(--secondary);padding:11px 14px;display:flex;align-items:center;gap:10px;overflow-wrap:anywhere;min-width:0}.smart-navigation button.active,.board-navigation button.active{color:var(--accent-text);font-weight:650;background:var(--accent-soft);box-shadow:0 1px 3px var(--shadow-color)}.smart-navigation button:hover,.board-navigation button:hover{background:var(--surface)}.lists-heading{display:flex;align-items:center;justify-content:space-between;color:var(--secondary);font-size:12px;margin:34px 8px 10px}.lists-heading button{border:0;background:transparent;font-size:20px;padding:0 6px;min-height:32px}.board-symbol{font-size:18px}.sidebar-create{margin:12px 0 18px;gap:10px}.sidebar-create input{min-width:0}
 .three-pane-shell .workspace{width:100%;min-width:0;max-width:none;padding:40px 42px;margin:0}.mobile-navigation{display:none}
@@ -36,9 +36,9 @@
 /* Explicit warning color, rather than a date label that is only textually overdue. */
 .card-schedule[title*="逾期"]{color:var(--overdue)}
 
-.theme-changing *,.theme-changing *:before,.theme-changing *:after{transition:none!important}.inbox-history-control{display:flex;justify-content:flex-end;max-width:1000px;margin-bottom:12px}.inbox-history{max-width:1000px}.inbox-history .archived-card{background:var(--surface);min-height:54px}.task-panel .completion-toast{opacity:1}
+@media(prefers-reduced-motion:no-preference){:root.theme-ready,:root.theme-ready *,:root.theme-ready *:before,:root.theme-ready *:after{transition-property:color,background-color,border-color,fill,stroke;transition-duration:180ms;transition-timing-function:ease-out}}.inbox-history-control{display:flex;justify-content:flex-end;max-width:1000px;margin-bottom:12px}.inbox-history{max-width:1000px}.inbox-history .archived-card{background:var(--surface);min-height:54px}.task-panel .completion-toast{opacity:1}
 ::selection{background:var(--selection);color:var(--selection-text)}
-.login-themes{display:flex;gap:16px;margin-top:20px}.login-themes .theme-label{flex:1;font-size:12px}.login-themes select{font-size:13px;padding:7px}
+.login-themes{display:flex;justify-content:flex-end;margin-top:16px}
 
 /* B2/C2 colors share palette tokens; graphite pairs neutral ink with ice blue. */
 :root{--brand-ink:var(--accent);--brand-thread:var(--selection);--brand-face:#ffffff}
