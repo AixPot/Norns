@@ -53,3 +53,34 @@ python3 tests/b2-attachments-acceptance.py
 `drag-order.mjs` 使用真实鼠标及 Chromium CDP `Input.dispatchTouchEvent` 触点序列，不以 DOM dispatchEvent 代替手势。覆盖列表首尾移动与刷新持久化、卡片同列/跨空列落点、唯一占位、完成分组边界、正常内容滑动和短点详情、第二指/取消、固定指针边缘自动滚动与 scroll-snap 恢复、同版本轮询不打断/新版本取消、真实 409 与提交后丢响应不重放，以及 320/375 窄屏。列表标题拖动；详情移动菜单和列表更多菜单是键盘后备。后端 `list_move` 经现有整板 CAS 原子重排，不迁移 schema、不修改卡片字段。
 
 这仅证明 Chromium 原生输入管线；物理 iPhone Safari、Android Chrome、系统长按菜单、切后台和软键盘仍需实机验收。当前纵向边缘滚动对应文档，不新增列内滚动。已完成卡片继续置底，不能在异完成分组区域宣称任意落点。
+
+
+## Three-pane workspace, private inbox and theme acceptance
+
+`frontend/test-browser/three-pane.mjs` uses a unique synthetic SQLite database, randomly generated test credentials and loopback-only owned processes. It does not read `.env` or a production database. Set `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` and an existing disposable `EVIDENCE_ROOT`; optionally set `LOCAL_S3_MODULE` to an existing `s3rver` module entry to exercise actual private attachment bytes. No dependency is installed automatically.
+
+```sh
+node frontend/test-browser/three-pane.mjs
+node frontend/test-browser/transfer-blur.mjs
+node frontend/test-browser/list-ab.mjs
+```
+
+`list-ab.mjs` verifies individual lightweight Inbox/Assigned to Me task cards and Today/Next Seven Days date groups using the actual API and a fresh synthetic database. Spanning tasks appear once on their first visible date, ungenerated recurrence is not expanded, and counts reflect the full server result. It checks explicit private undated/unassigned capture, rejected input retention, IME submit/navigation barriers, detail autosave, completed-bottom undo, 1440/375/320 light/dark screenshots, visible individual 1px card borders, 8px card gaps/radii, no standing shadow, unclamped titles, checkbox/detail 44px hot areas, checkbox completion without opening details, exact 16px mobile title size, no horizontal overflow and computed text/token contrast. `frontend/tests/task-groups.test.mjs` covers the pure grouping projection. This does not resolve the separately tracked historical `undefined.filter` quality blocker or constitute release approval.
+
+The runner checks default Today after login/restore, overdue and interval boundaries for Tomorrow/Next Seven Days, explicitly expanded completed groups, private unassigned/undated capture, archived inbox access, calendar inbox details, unsent input/IME barriers, smart completions and ten-second latest-item undo across authorized board scopes. It creates an actual repeated chain with archived history, comments and checklists; server preview cancellation, target-version 409, pending-attachment rejection, local-S3 quota 413, committed response loss and exact source/destination readback are exercised without automatic replay. The acknowledged success path also reads every preview ID in destination and verifies source 404.
+
+With the optional local S3 module, actual browser upload, download and sandboxed text preview preserve exact bytes after the archived task moves. Attachment URLs are checked under the new board scope. This is not evidence about real B2 credentials, CORS or retention.
+
+Theme acceptance includes light/dark/system, media changes, browser account isolation, the first authenticated workspace render after session restoration, native `color-scheme`/meta, real localStorage read/write failures, computed token contrast and 320/375 screenshots. Anonymous loading follows system or its anonymous preference; an unknown account preference cannot be applied before `/me` identifies the account. Task data is not stored in browser storage.
+
+The six representative regressions remain independently executable: `completed-bottom-undo`, `drag-order`, `schedule-autosave`, `calendar`, `poll-revision`, `task-filter-metadata` under `frontend/test-browser/`. Their selectors use the new sidebar/drawer and reserved system inbox board/list IDs, retaining the business assertions. Explicit retry after an unknown autosave now opens read-only latest-version review before the user chooses to preserve local fields and write again.
+
+All browser runners own and close their browser and test server in `finally`. The new runner also closes its local S3 instance. Screenshots, JSON results and logs belong in the external evidence directory, not in this repository. Chromium CDP touch tests are not physical iPhone/Safari or Android coverage. Run `npm --prefix frontend test`, `npm --prefix frontend run check`, and `npm --prefix frontend run build` separately; a front-end-only change does not warrant unrelated Rust rebuilds after the verified backend binary is hash-pinned.
+
+## Four orthogonal color palettes
+
+`node frontend/test-browser/color-themes.mjs` reuses the loopback synthetic-server pattern from `list-ab.mjs` (port 48771, so run sequentially). It requires the same existing Playwright/Chromium paths and built application; no `.env`, production SQLite or B2 access is used. It checks blue/iris/clay/graphite × light/dark core tokens and semantic states (normal text >=4.5, focus >=3), actual enabled completion-button foreground/background, the existing BoardView/calendar/search/detail surfaces, mobile drawer/picker and realistic long titles. Keyboard selection, legacy mode preservation, system media response, refresh, anonymous/account separation, storage denial, dirty IME draft DOM/selection/autosave, and completion undo after palette switching are representative workflow checks. The 58-case frontend unit suite retains two representative theme-helper tests rather than expanding a backend matrix. `three-pane.mjs` changes only its obsolete green meta-color expectation; all security and workflow assertions remain.
+
+Palette keys add `.palette` to the original per-account mode keys. Palette and mode are independent; task data is never added to storage. Anonymous preferences are all that bootstrap can know before `/api/me`. Bootstrap remains synchronous, same-origin and CSP compatible. PDF paper remains white by design. The current N/dot placeholders follow brand tokens; the B2 logo is integrated and C2 remains a resource only. Disabled buttons intentionally retain the existing opacity treatment; contrast claims apply to enabled text and controls. Native platform picker popup rendering is not physical-device coverage.
+
+The historical `undefined.filter` Q1 remains **OPEN**; its root cause is not proven. Test passes do not establish a fix. The runner records exact unexpected stacks and retains expected unauthenticated `/api/me` 401 and missing `/favicon.ico` 404 diagnostics separately from application failures.

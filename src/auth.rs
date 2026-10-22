@@ -87,12 +87,16 @@ pub async fn init_admin(url: &str, name: &str, password: &str) -> std::result::R
     if count != 0 {
         return Err("initialization refused: users already exist".into());
     }
-    sqlx::query("INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)")
+    let id = sqlx::query("INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)")
         .bind(name)
         .bind(hashed)
         .execute(&mut *tx)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+    crate::inbox::ensure(&mut tx, id)
+        .await
+        .map_err(|_| "inbox initialization failed".to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     pool.close().await;
     Ok(())
@@ -213,6 +217,7 @@ pub async fn login(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(error::unauthorized)?;
+    crate::inbox::ensure(&mut tx, id).await?;
     let raw = token();
     let csrf = token();
     sqlx::query("INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES(?,?,?,?)")

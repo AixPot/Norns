@@ -8,8 +8,8 @@ export function createTaskLoader({read,apply,onerror}){
  return {async load(query){const token=++epoch;try{const rows=await read(query);if(token===epoch)apply(rows)}catch(e){if(token===epoch)onerror(e)}},stop(){++epoch}};
 }
 
-export function reconcileTaskFilters(filters,{boards,people}){
- const board_id=boards.some(b=>String(b.id)===filters.board_id)?filters.board_id:'';
+export function reconcileTaskFilters(filters,{boards,people,inbox}){
+ const board_id=[...boards,...(inbox?[inbox]:[])].some(b=>String(b.id)===filters.board_id)?filters.board_id:'';
  const assignee_id=people.some(p=>String(p.id)===filters.assignee_id)?filters.assignee_id:'';
  return board_id===filters.board_id&&assignee_id===filters.assignee_id?filters:{...filters,board_id,assignee_id};
 }

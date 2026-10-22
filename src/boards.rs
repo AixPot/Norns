@@ -15,6 +15,8 @@ pub struct Board {
     id: i64,
     title: String,
     revision: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inbox_owner_id: Option<i64>,
 }
 #[derive(Serialize, FromRow)]
 pub struct List {
@@ -83,18 +85,22 @@ async fn active(tx: &mut Transaction<'_, Sqlite>, a: &Actor) -> Result<()> {
     }
     Ok(())
 }
-async fn role(tx: &mut Transaction<'_, Sqlite>, a: &Actor, id: i64) -> Result<String> {
+pub(crate) async fn role(tx: &mut Transaction<'_, Sqlite>, a: &Actor, id: i64) -> Result<String> {
     active(tx, a).await?;
-    sqlx::query_scalar("SELECT role FROM board_members WHERE board_id=? AND user_id=?")
+    sqlx::query_scalar("SELECT m.role FROM board_members m JOIN boards b ON b.id=m.board_id WHERE m.board_id=? AND m.user_id=? AND (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id)")
         .bind(id)
         .bind(a.user.id)
         .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(error::missing)
 }
-async fn snapshot(tx: &mut Transaction<'_, Sqlite>, a: &Actor, id: i64) -> Result<Snapshot> {
+pub(crate) async fn snapshot(
+    tx: &mut Transaction<'_, Sqlite>,
+    a: &Actor,
+    id: i64,
+) -> Result<Snapshot> {
     let role = role(tx, a, id).await?;
-    let board = sqlx::query_as("SELECT id,title,revision FROM boards WHERE id=?")
+    let board = sqlx::query_as("SELECT id,title,revision,inbox_owner_id FROM boards WHERE id=?")
         .bind(id)
         .fetch_one(&mut **tx)
         .await?;
@@ -122,7 +128,7 @@ pub async fn list(
     State(s): State<AppState>,
     Extension(a): Extension<Actor>,
 ) -> Result<Json<Vec<Board>>> {
-    Ok(Json(sqlx::query_as("SELECT b.id,b.title,b.revision FROM boards b JOIN board_members m ON m.board_id=b.id WHERE m.user_id=? ORDER BY b.id").bind(a.user.id).fetch_all(&s.pool).await?))
+    Ok(Json(sqlx::query_as("SELECT b.id,b.title,b.revision,b.inbox_owner_id FROM boards b JOIN board_members m ON m.board_id=b.id WHERE m.user_id=? AND b.inbox_owner_id IS NULL ORDER BY b.id").bind(a.user.id).fetch_all(&s.pool).await?))
 }
 #[derive(Deserialize)]
 pub struct Title {
@@ -269,6 +275,23 @@ pub async fn mutate(
         .await?;
     if rev != input.expected_revision {
         return Err(error::conflict());
+    }
+    let private: bool =
+        sqlx::query_scalar("SELECT inbox_owner_id IS NOT NULL FROM boards WHERE id=?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if private
+        && matches!(
+            &input.action,
+            Action::ListCreate { .. }
+                | Action::ListUpdate { .. }
+                | Action::ListMove { .. }
+                | Action::MemberSet { .. }
+                | Action::MemberRemove { .. }
+        )
+    {
+        return Err(error::forbidden());
     }
     match input.action {
         Action::CardSchedule { card_id, schedule } => {

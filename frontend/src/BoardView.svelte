@@ -57,8 +57,8 @@
 
 <p class="sr-only" role="status" aria-live="polite">{status}</p>
 <style>
- .card-completed{background:#edf2ee;border-color:#d0dbd2;box-shadow:none;transition:background .18s,border-color .18s}
- .card-completed .card-content.completed{color:#52665b!important}
- .card-completed .card-completion{background:#e3ece5;border-radius:8px}
+ .card-completed{background:var(--surface-muted);border-color:var(--border);box-shadow:none;transition:background .18s,border-color .18s}
+ .card-completed .card-content.completed{color:var(--secondary)!important}
+ .card-completed .card-completion{background:var(--border);border-radius:8px}
  @media(prefers-reduced-motion:reduce){.card-completed{transition:none}}
 </style>

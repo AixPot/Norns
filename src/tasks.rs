@@ -53,6 +53,7 @@ pub struct Discovery {
     tasks: Vec<Task>,
     boards: Vec<FilterBoard>,
     people: Vec<FilterPerson>,
+    inbox: Option<FilterBoard>,
 }
 
 pub async fn list(
@@ -63,7 +64,7 @@ pub async fn list(
     let status = f.status.as_deref().unwrap_or("all");
     let view = f.view.as_deref().unwrap_or("all");
     if !["all", "complete", "incomplete"].contains(&status)
-        || !["all", "mine", "today", "upcoming"].contains(&view)
+        || !["all", "mine", "today", "tomorrow", "next7", "upcoming"].contains(&view)
         || f.q.as_ref().is_some_and(|q| q.len() > 500)
     {
         return Err(error::invalid());
@@ -89,6 +90,7 @@ pub async fn list(
         "SELECT c.id,c.title,c.description,c.completed,c.assignee_id,u.username AS assignee_name,c.due_date,c.schedule,b.id AS board_id,b.title AS board_title,l.id AS list_id,l.title AS list_title FROM cards c JOIN lists l ON l.id=c.list_id JOIN boards b ON b.id=l.board_id JOIN board_members m ON m.board_id=b.id LEFT JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=",
     );
     q.push_bind(a.user.id);
+    q.push(" AND (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id)");
     if let Some(id) = f.board_id {
         q.push(" AND b.id=").push_bind(id);
     }
@@ -109,8 +111,14 @@ pub async fn list(
         q.push(" AND c.assignee_id=").push_bind(a.user.id);
     }
     if view == "today" {
+        q.push(format!(" AND {start}<=date('now','+8 hours')"));
+    }
+    if view == "tomorrow" {
+        q.push(format!(" AND {start}<=date('now','+8 hours','+1 days') AND {end}>=date('now','+8 hours','+1 days')"));
+    }
+    if view == "next7" {
         q.push(format!(
-            " AND {start}<=date('now','+8 hours') AND {end}>=date('now','+8 hours')"
+            " AND {start}<=date('now','+8 hours','+6 days') AND {end}>=date('now','+8 hours')"
         ));
     }
     if view == "upcoming" {
@@ -127,14 +135,19 @@ pub async fn list(
     ));
     let tasks = q.build_query_as().fetch_all(&mut *tx).await?;
     // Metadata uses the same authorized read snapshot, never the narrowed result set.
-    let boards = sqlx::query_as("SELECT b.id,b.title,b.revision FROM boards b JOIN board_members m ON m.board_id=b.id WHERE m.user_id=? ORDER BY b.id")
+    let boards = sqlx::query_as("SELECT b.id,b.title,b.revision FROM boards b JOIN board_members m ON m.board_id=b.id WHERE m.user_id=? AND b.inbox_owner_id IS NULL ORDER BY b.id")
         .bind(a.user.id).fetch_all(&mut *tx).await?;
-    let people = sqlx::query_as("SELECT DISTINCT u.id,u.username AS name FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=? ORDER BY u.id")
+    let inbox = sqlx::query_as("SELECT id,title,revision FROM boards WHERE inbox_owner_id=?")
+        .bind(a.user.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let people = sqlx::query_as("SELECT DISTINCT u.id,u.username AS name FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id JOIN boards b ON b.id=l.board_id JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=? AND (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id) ORDER BY u.id")
         .bind(a.user.id).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(Discovery {
         tasks,
         boards,
         people,
+        inbox,
     }))
 }

@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {initialRoute,smartFilters,createIdentityGate} from '../src/navigation.mjs';
+test('workspace always starts today incomplete, inbox has explicit private scope',()=>{assert.equal(initialRoute(),'today');assert.deepEqual(smartFilters('inbox',19),{q:'',view:'all',status:'incomplete',assignee_id:'',board_id:'19',from:'',to:''})});
+test('identity generation discards late same-account and cross-account metadata',()=>{const g=createIdentityGate();g.switch(1);const old=g.ticket();assert.equal(g.accept(old),true);g.switch(2);assert.equal(g.accept(old),false);const b=g.ticket();g.switch(2);assert.equal(g.accept(b),false);g.switch(null);assert.equal(g.accept(old),false)});
+test('smart views request explicit incomplete; no browser dates are guessed',()=>{for(const view of ['today','tomorrow','next7','mine']){const f=smartFilters(view,19);assert.equal(f.view,view);assert.equal(f.status,'incomplete');assert.equal(f.board_id,'');assert.equal(f.from,'');assert.equal(f.to,'')}});

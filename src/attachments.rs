@@ -125,7 +125,7 @@ impl Storage {
 }
 pub async fn authorize(s: &AppState, a: &Actor, b: i64, c: i64) -> Result<()> {
     let actor = auth::resolve(&s.pool, &a.session).await?;
-    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id WHERE c.id=? AND l.board_id=? AND m.user_id=?)").bind(c).bind(b).bind(actor.user.id).fetch_one(&s.pool).await?;
+    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id JOIN boards b ON b.id=l.board_id WHERE (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id) AND c.id=? AND l.board_id=? AND m.user_id=?)").bind(c).bind(b).bind(actor.user.id).fetch_one(&s.pool).await?;
     if !exists {
         return Err(error::missing());
     }
@@ -137,7 +137,7 @@ async fn tx_authorize(
     b: i64,
     c: i64,
 ) -> Result<()> {
-    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id WHERE c.id=? AND l.board_id=? AND s.token_hash=? AND s.expires_at>? AND u.active=1)").bind(c).bind(b).bind(&a.session).bind(auth::now()).fetch_one(&mut **tx).await?;
+    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards c JOIN lists l ON l.id=c.list_id JOIN board_members m ON m.board_id=l.board_id JOIN boards b ON b.id=l.board_id JOIN users u ON u.id=m.user_id JOIN sessions s ON s.user_id=u.id WHERE (b.inbox_owner_id IS NULL OR b.inbox_owner_id=u.id) AND c.id=? AND l.board_id=? AND s.token_hash=? AND s.expires_at>? AND u.active=1)").bind(c).bind(b).bind(&a.session).bind(auth::now()).fetch_one(&mut **tx).await?;
     if !exists {
         return Err(error::missing());
     }

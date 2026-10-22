@@ -65,6 +65,7 @@ pub async fn create(
         .execute(&mut *tx)
         .await?
         .last_insert_rowid();
+    crate::inbox::ensure(&mut tx, id).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -108,7 +109,7 @@ pub async fn update(
         return Err(error::forbidden());
     }
     if input.active == Some(false) {
-        let orphan:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_members mine WHERE mine.user_id=? AND mine.role='admin' AND NOT EXISTS(SELECT 1 FROM board_members other JOIN users u ON u.id=other.user_id WHERE other.board_id=mine.board_id AND other.role='admin' AND other.user_id<>? AND u.active=1))").bind(id).bind(id).fetch_one(&mut *tx).await?;
+        let orphan:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM board_members mine JOIN boards b ON b.id=mine.board_id WHERE b.inbox_owner_id IS NULL AND mine.user_id=? AND mine.role='admin' AND NOT EXISTS(SELECT 1 FROM board_members other JOIN users u ON u.id=other.user_id WHERE other.board_id=mine.board_id AND other.role='admin' AND other.user_id<>? AND u.active=1))").bind(id).bind(id).fetch_one(&mut *tx).await?;
         if orphan {
             return Err(error::Error(
                 StatusCode::CONFLICT,

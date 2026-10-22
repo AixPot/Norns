@@ -7,13 +7,14 @@
  import Attachments from './Attachments.svelte';
  import {positionPanel} from './panel-position.mjs';
  import type {Board,Draft,Card} from './types';
- type Props={feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
- let {feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
+ type Props={ontransfer?:()=>Promise<void>;feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
+ let {ontransfer,feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
  let panel:HTMLDivElement,body:HTMLDivElement;let titleInput=$state<HTMLInputElement>(),descriptionInput=$state<HTMLTextAreaElement>();
  let editor=$state(''),more=$state(false),localError=$state(''),composing=$state(false);
  let position=$state({left:12,top:12}),viewport=$state({height:0,top:0,mobile:false});
  let target=$state(untrack(()=>draft.list_id)),index=$state(''),newItem=$state(''),comment=$state(''),renaming=$state(0),itemTitle=$state('');
- let attachments=$state<Attachments|null>(null),actionPending=$state(false);
+ let attachments=$state<Attachments|null>(null),actionPending=$state(false),transferPending=$state(false);
+ async function transfer(){if(transferPending||actionPending)return;transferPending=true;try{await ontransfer?.()}catch(e){localError=e instanceof Error?e.message:'转移准备失败，请重试'}finally{transferPending=false}}
  const moveSlots=$derived(cardSlots(board,draft.id,Number(target)));
  const selectedSlot=$derived(moveSlots.find((s:any)=>slotKey(s)===index)||moveSlots[0]);
  const items=$derived(board.checklist.filter(i=>i.card_id===draft.id));
@@ -37,7 +38,7 @@
  }
  onMount(()=>{
   panel.focus({preventScroll:true});growDescription();layout();const observer=new ResizeObserver(layout);observer.observe(panel);
-  const outside=(e:PointerEvent)=>{const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.card,.archived-card,.calendar-view button,.calendar-view select,.completion-toast')&&!composing)onclose()};
+  const outside=(e:PointerEvent)=>{const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.card,.archived-card,.calendar-view button,.calendar-view select,.completion-toast,.smart-row,.three-pane-nav,.function-rail,.mobile-navigation')&&!composing)onclose()};
   const keyboard=(e:KeyboardEvent)=>{
    if(e.isComposing||composing)return;
    if(e.key==='Escape'){e.preventDefault();if(more)more=false;else onclose()}
@@ -51,6 +52,7 @@
  });
  async function openEditor(id:string){if(editor==='schedule'&&!await onblur())return;editor=editor===id?'':id;more=false;await tick();if(id==='description'){titleInput?.focus()}else body.querySelector<HTMLElement>(`[data-editor="${id}"] input,[data-editor="${id}"] textarea,[data-editor="${id}"] select`)?.focus();}
  function composition(active:boolean){composing=active;oncomposition(active)}
+ export function transferReady(){if(composing||hasPending()){localError='请先完成输入，并发送或清空未发送的评论、清单和附件队列，再转移。';return false}return true}
  export function hasPending(){return !!newItem.trim()||!!comment.trim()||!!renaming||actionPending||!!attachments?.hasPending()}
  export function canLeave(confirmPending=true){
   if(composing){localError='请先完成当前输入，再关闭或切换。';return false}
@@ -98,7 +100,8 @@
   {#if editor==='comment'}<form class="task-editor" onsubmit={e=>{e.preventDefault();void postComment()}}><label>发表评论<textarea aria-label="发表评论" bind:value={comment} rows="3" maxlength="10000" required></textarea></label><button disabled={actionPending}>发送评论</button></form>{/if}</section>{/if}
  </div>
  <div class="task-panel-bottom" role="toolbar" aria-label="卡片底部操作">
- {#each tools.filter(t=>['people','comment','move'].includes(t.id)) as tool}<button class="tool-button" class:move-tool={tool.id==='move'} class:active={editor===tool.id} aria-label={tool.label} title={tool.label} aria-expanded={editor===tool.id} onclick={()=>openEditor(tool.id)}>{@render glyph(tool.path)}</button>{/each}
+ {#each tools.filter(t=>['people','comment','move'].includes(t.id)&&!(board.inbox_owner_id&&t.id==='move')) as tool}<button class="tool-button" class:move-tool={tool.id==='move'} class:active={editor===tool.id} aria-label={tool.label} title={tool.label} aria-expanded={editor===tool.id} onclick={()=>openEditor(tool.id)}>{@render glyph(tool.path)}</button>{/each}
+ {#if board.inbox_owner_id}<button disabled={actionPending||transferPending} onclick={transfer}>移入普通看板</button>{/if}
  </div>
  {@render feedback?.()}
 </div>

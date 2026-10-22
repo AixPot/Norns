@@ -10,11 +10,13 @@ const env={PATH:process.env.PATH,DATABASE_URL:'sqlite://'+evidence+'/norns.sqlit
 await new Promise((resolve,reject)=>{const probe=net.createServer();probe.once('error',reject);probe.listen(48759,'127.0.0.1',()=>probe.close(resolve))});
 assert.equal(spawnSync(root+'/target/release/norns',['init-admin','admin'],{env,input:password,cwd:evidence}).status,0);
 let server,browser;const errors=[];const checks=[];const log=fs.openSync(evidence+'/server.log','a');
-async function login(p){p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByLabel('用户名',{exact:true}).fill('admin');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录 Norns',exact:true}).click();await p.getByRole('heading',{name:'我的看板',exact:true}).waitFor()}
+async function login(p){p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByLabel('用户名',{exact:true}).fill('admin');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录 Norns',exact:true}).click();await p.getByRole('heading',{name:'今天',exact:true}).waitFor()}
 async function rpc(p,path,body){return p.evaluate(async({path,body})=>{const me=await(await fetch('/api/me')).json();const r=await fetch('/api'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()}},{path,body})}
-async function snapshot(p){return (await rpc(p,'/boards/1')).body}
+async function snapshot(p){return (await rpc(p,'/boards/2')).body}
 async function waitBoard(p,predicate){for(let i=0;i<100;i++){const b=await snapshot(p);if(predicate(b))return b;await p.waitForTimeout(50)}assert.fail('persisted board condition timed out')}
-async function action(p,data){const b=await snapshot(p);const r=await rpc(p,'/boards/1/mutate',{expected_revision:b.revision,...data});assert.equal(r.status,200);return r.body}
+async function action(p,data){const b=await snapshot(p);const r=await rpc(p,'/boards/2/mutate',{expected_revision:b.revision,...data});assert.equal(r.status,200);return r.body}
+
+async function shellNav(p,name,regex=false){if(await p.getByLabel('打开导航',{exact:true}).isVisible()){await p.getByLabel('打开导航',{exact:true}).click();await p.getByRole('dialog',{name:'导航'}).getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}else await p.getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}
 try{
  server=spawn(root+'/target/release/norns',[],{env,cwd:evidence,stdio:['ignore',log,log]});fs.closeSync(log);
  for(let i=0;i<100;i++){try{if((await fetch(base)).ok)break}catch{}await new Promise(r=>setTimeout(r,50))}
@@ -41,27 +43,27 @@ try{
  checks.push('date blur and recurrence debounce persist actual backend, reopen/reload');
  // Real committed response held: further date/repeat/text edits stay live and drain in the same queue.
  let release,capture;const gate=new Promise(r=>release=r),captured=new Promise(r=>capture=r);let held=false,flight=0,maxFlight=0;
- await p.route('**/api/boards/1/mutate',async route=>{flight++;maxFlight=Math.max(maxFlight,flight);try{if(!held){held=true;const response=await route.fetch();capture();await gate;await route.fulfill({response})}else await route.continue()}finally{flight--}});
+ await p.route('**/api/boards/2/mutate',async route=>{flight++;maxFlight=Math.max(maxFlight,flight);try{if(!held){held=true;const response=await route.fetch();capture();await gate;await route.fulfill({response})}else await route.continue()}finally{flight--}});
  await field('开始日期').fill('2028-01-03');await captured;
  await field('开始日期').fill('2028-01-04');await field('重复间隔').fill('3');await field('描述').fill('same serialized owner');
  await field('开始日期').evaluate(el=>window.dateNode=el);
  release();await waitBoard(p,b=>b.cards[0].schedule?.start_date==='2028-01-04'&&b.cards[0].schedule?.repeat?.interval===3&&b.cards[0].description==='same serialized owner');await saved();
- assert.equal(await field('开始日期').evaluate(el=>el===window.dateNode),true);assert.equal(await field('开始日期').inputValue(),'2028-01-04');assert.equal(maxFlight,1);await p.unroute('**/api/boards/1/mutate');
+ assert.equal(await field('开始日期').evaluate(el=>el===window.dateNode),true);assert.equal(await field('开始日期').inputValue(),'2028-01-04');assert.equal(maxFlight,1);await p.unroute('**/api/boards/2/mutate');
  checks.push('inflight edits preserve DOM/current input; date/repeat/text serialize');
  // Invalid partial ranges never claim saved, hide/close/switch/navigation retain exact input.
  await field('结束日期').fill('2028-01-01');await field('开始时间').focus();await p.locator('.schedule-editor [role="alert"]').waitFor();
  await p.locator('.task-save').filter({hasText:'未保存'}).waitFor();
- for(const leave of [()=>schedule(),()=>button('关闭卡片').click(),()=>p.getByRole('group',{name:'任务2',exact:true}).locator('.card-content').click(),()=>button('← 我的看板').click()]){await leave();assert.equal(await field('结束日期').inputValue(),'2028-01-01');assert.equal(await field('卡片标题').inputValue(),'任务1')}
+ for(const leave of [()=>schedule(),()=>button('关闭卡片').click(),()=>p.getByRole('group',{name:'任务2',exact:true}).locator('.card-content').click(),()=>button('Norns 今天').click()]){await leave();assert.equal(await field('结束日期').inputValue(),'2028-01-01');assert.equal(await field('卡片标题').inputValue(),'任务1')}
  assert.equal((await snapshot(p)).cards[0].schedule.end_date,undefined);
  await field('结束日期').fill('2028-01-05');await waitBoard(p,b=>b.cards[0].schedule?.end_date==='2028-01-05');await saved();
  await field('重复').selectOption('week');await p.locator('.schedule-editor [role="alert"]').waitFor();await button('关闭卡片').click();assert.equal(await field('重复').inputValue(),'week');
  await field('周一').check();await waitBoard(p,b=>b.cards[0].schedule?.repeat?.unit==='week');await saved();
  checks.push('invalid range/partial weekly recurrence retain input and block all leave paths, recover automatically');
  // Network errors require an explicit retry even after further edits.
- await p.route('**/api/boards/1/mutate',route=>route.abort('failed'));
+ await p.route('**/api/boards/2/mutate',route=>route.abort('failed'));
  await field('开始日期').fill('2028-01-05');await p.getByText('保存失败，输入已保留。',{exact:true}).waitFor();
  await field('开始日期').fill('2028-01-06');await field('结束日期').fill('2028-01-07');await button('关闭卡片').click();assert.equal(await field('开始日期').inputValue(),'2028-01-06');
- await p.unroute('**/api/boards/1/mutate');await button('重试保存').click();await waitBoard(p,b=>b.cards[0].schedule?.start_date==='2028-01-06');await saved();
+ await p.unroute('**/api/boards/2/mutate');await button('重试保存').click();await p.getByRole('heading',{name:/最新版本/}).waitFor();await button('保留我的修改并重试').click();await waitBoard(p,b=>b.cards[0].schedule?.start_date==='2028-01-06');await saved();
  checks.push('transport failure retains newer date draft, blocks close, explicit retry');
  // Independent server revision must never replace dirty date fields or silently overwrite.
  await action(p,{action:'card_update',card_id:1,title:'remote title',description:'external',archived:false});
@@ -77,12 +79,12 @@ try{
  await field('开始日期').fill('2028-01-07');await saved();
  // Invalid input created during an awaited close cannot be lost after the response.
  let releaseLeave,captureLeave;const leaveGate=new Promise(r=>releaseLeave=r),leaveCaptured=new Promise(r=>captureLeave=r);let holdLeave=true;
- await p.route('**/api/boards/1/mutate',async route=>{if(!holdLeave)return route.continue();holdLeave=false;const response=await route.fetch();captureLeave();await leaveGate;await route.fulfill({response})});
+ await p.route('**/api/boards/2/mutate',async route=>{if(!holdLeave)return route.continue();holdLeave=false;const response=await route.fetch();captureLeave();await leaveGate;await route.fulfill({response})});
  await field('重复间隔').fill('6');await leaveCaptured;await button('关闭卡片').click();
  await field('重复间隔').fill('');releaseLeave();await p.locator('.task-save').filter({hasText:'未保存'}).waitFor();
  assert.equal(await p.getByRole('dialog').count(),1);assert.equal(await field('重复间隔').inputValue(),'');
  assert.equal((await snapshot(p)).cards[0].schedule.repeat.interval,6);
- await p.unroute('**/api/boards/1/mutate');await field('重复间隔').fill('7');await waitBoard(p,b=>b.cards[0].schedule?.repeat?.interval===7);await saved();
+ await p.unroute('**/api/boards/2/mutate');await field('重复间隔').fill('7');await waitBoard(p,b=>b.cards[0].schedule?.repeat?.interval===7);await saved();
  checks.push('empty start and invalid input during held close remain recoverable without data loss');
  // Rebase must carry the persisted date projection into assignment-only legacy writes.
  await action(p,{action:'card_schedule',card_id:1,schedule:{start_date:'2028-02-01',repeat:{unit:'day',interval:2}}});

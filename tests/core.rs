@@ -2105,7 +2105,7 @@ async fn discovery_membership_filters_and_session_revocation() {
         );
     }
     let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
-    sqlx::query("DELETE FROM board_members WHERE user_id=1")
+    sqlx::query("DELETE FROM board_members WHERE user_id=1 AND board_id IN (SELECT id FROM boards WHERE inbox_owner_id IS NULL)")
         .execute(&pool)
         .await
         .unwrap();
@@ -2194,7 +2194,7 @@ async fn discovery_calendar_ranges_upcoming_archive_and_membership_loss() {
     }
     assert_eq!(
         names(&app, &c, &t, "view=today").await,
-        vec!["spanning", "today"]
+        vec!["overdue", "spanning", "today"]
     );
     assert_eq!(
         names(&app, &c, &t, "view=upcoming").await,
@@ -2280,12 +2280,18 @@ async fn discovery_metadata_is_unfiltered_and_revocation_scoped() {
         "empty boards remain choices"
     );
     let pool = sqlx::SqlitePool::connect(&url).await.unwrap();
-    sqlx::query("DELETE FROM board_members WHERE user_id=1")
+    sqlx::query("DELETE FROM board_members WHERE user_id=1 AND board_id IN (SELECT id FROM boards WHERE inbox_owner_id IS NULL)")
         .execute(&pool)
         .await
         .unwrap();
     let (_, v, _) = call(&app, "GET", "/api/tasks", json!({}), &c, &t).await;
-    assert_eq!(v, json!({"tasks":[],"boards":[],"people":[]}));
+    assert_eq!(v["tasks"], json!([]));
+    assert_eq!(v["boards"], json!([]));
+    assert_eq!(v["people"], json!([]));
+    assert!(
+        v["inbox"]["id"].is_i64(),
+        "revoking ordinary boards retains owner inbox"
+    );
 }
 
 #[tokio::test]

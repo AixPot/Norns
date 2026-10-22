@@ -1,0 +1,16 @@
+ALTER TABLE boards ADD COLUMN inbox_owner_id INTEGER REFERENCES users(id);
+ALTER TABLE lists ADD COLUMN inbox_default INTEGER NOT NULL DEFAULT 0 CHECK(inbox_default IN (0,1));
+CREATE INDEX cards_series ON cards(series_id) WHERE series_id IS NOT NULL;
+CREATE UNIQUE INDEX inbox_owner ON boards(inbox_owner_id) WHERE inbox_owner_id IS NOT NULL;
+CREATE UNIQUE INDEX inbox_default_list ON lists(board_id) WHERE inbox_default=1;
+INSERT INTO boards(title,inbox_owner_id) SELECT '收集箱',id FROM users;
+INSERT INTO board_members(board_id,user_id,role) SELECT id,inbox_owner_id,'admin' FROM boards WHERE inbox_owner_id IS NOT NULL;
+INSERT INTO lists(board_id,title,position,inbox_default) SELECT id,'收集箱',0,1 FROM boards WHERE inbox_owner_id IS NOT NULL;
+CREATE TRIGGER inbox_owner_immutable BEFORE UPDATE OF inbox_owner_id ON boards WHEN NEW.inbox_owner_id IS NOT OLD.inbox_owner_id BEGIN SELECT RAISE(ABORT,'immutable inbox owner'); END;
+CREATE TRIGGER inbox_board_delete BEFORE DELETE ON boards WHEN OLD.inbox_owner_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'protected inbox'); END;
+CREATE TRIGGER inbox_member_insert BEFORE INSERT ON board_members WHEN EXISTS(SELECT 1 FROM boards WHERE id=NEW.board_id AND inbox_owner_id IS NOT NULL AND (inbox_owner_id<>NEW.user_id OR NEW.role<>'admin')) BEGIN SELECT RAISE(ABORT,'private inbox membership'); END;
+CREATE TRIGGER inbox_member_update BEFORE UPDATE ON board_members WHEN EXISTS(SELECT 1 FROM boards WHERE id=OLD.board_id AND inbox_owner_id IS NOT NULL) OR EXISTS(SELECT 1 FROM boards WHERE id=NEW.board_id AND inbox_owner_id IS NOT NULL) BEGIN SELECT RAISE(ABORT,'protected inbox membership'); END;
+CREATE TRIGGER inbox_member_delete BEFORE DELETE ON board_members WHEN EXISTS(SELECT 1 FROM boards WHERE id=OLD.board_id AND inbox_owner_id IS NOT NULL) BEGIN SELECT RAISE(ABORT,'protected inbox membership'); END;
+CREATE TRIGGER inbox_list_insert BEFORE INSERT ON lists WHEN (NEW.inbox_default=1 AND NOT EXISTS(SELECT 1 FROM boards WHERE id=NEW.board_id AND inbox_owner_id IS NOT NULL)) OR EXISTS(SELECT 1 FROM boards WHERE id=NEW.board_id AND inbox_owner_id IS NOT NULL AND (NEW.inbox_default<>1 OR EXISTS(SELECT 1 FROM lists WHERE board_id=NEW.board_id))) BEGIN SELECT RAISE(ABORT,'private inbox list'); END;
+CREATE TRIGGER inbox_list_update BEFORE UPDATE ON lists WHEN OLD.inbox_default=1 OR NEW.inbox_default<>OLD.inbox_default OR EXISTS(SELECT 1 FROM boards WHERE id=NEW.board_id AND inbox_owner_id IS NOT NULL) BEGIN SELECT RAISE(ABORT,'protected inbox list'); END;
+CREATE TRIGGER inbox_list_delete BEFORE DELETE ON lists WHEN OLD.inbox_default=1 BEGIN SELECT RAISE(ABORT,'protected inbox list'); END;
