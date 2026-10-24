@@ -26,6 +26,8 @@ node frontend/test-browser/poll-revision.mjs
 
 每个脚本自建数据库与随机合成账号，启动并清理自己的服务。脚本使用 loopback 端口（当前界面回归为 48759，脚本运行时会先探测占用），请串行运行且保证端口未占用。输出可能含测试密码、数据库和截图，不要上传到公开仓库。Chromium 的触屏模拟不能替代物理手机或 Safari 测试。
 
+`card-schedule.mjs` 使用当前默认「今天」、私人收集箱预留后的普通看板／列表和稳定卡片 ID 选择器；离开看板时进入「账号管理」，避免把目标智能视图自身的 visibility 监听误认为看板泄漏。验证日期标签、完整 tooltip、无日期省略、完成勾选独立、北京时间跨午夜、恢复可见时刷新、卸载清理，以及 320/375 宽、844/440 高视口的字段和长卡片边界。它固定使用项目 release 二进制，须与集成验收指定的二进制一致。
+
 `completed-bottom-undo.mjs` 验证同列显示分组（未完成在前、已完成在后，数据库 position 不动）、最近一项确认成功后的 10 秒悬浮撤销、真实 CAS 排队、最新真实位置回位、重复任务安全拒绝及 320/375 窄屏。计时使用 Playwright fake clock；拖放索引用真实鼠标输入验证，不代表物理触摸拖拽验收。
 
 `tests/browser.mjs`、`tests/phase2-browser.mjs`、`tests/refresh-race-browser.mjs` 和 `tests/save-race.mjs` 保留早期界面的回归场景；部分选择器对应旧版显式保存或详情弹窗，不能当成当前界面全部通过的保证。`tests/browser.mjs` 默认使用 debug 二进制，需先 `cargo build --locked`。
@@ -65,13 +67,13 @@ node frontend/test-browser/transfer-blur.mjs
 node frontend/test-browser/list-ab.mjs
 ```
 
-`list-ab.mjs` verifies individual lightweight Inbox/Assigned to Me task cards and Today/Next Seven Days date groups using the actual API and a fresh synthetic database. Spanning tasks appear once on their first visible date, ungenerated recurrence is not expanded, and counts reflect the full server result. It checks explicit private undated/unassigned capture, rejected input retention, IME submit/navigation barriers, detail autosave, completed-bottom undo, 1440/375/320 light/dark screenshots, visible individual 1px card borders, 8px card gaps/radii, no standing shadow, unclamped titles, checkbox/detail 44px hot areas, checkbox completion without opening details, exact 16px mobile title size, no horizontal overflow and computed text/token contrast. `frontend/tests/task-groups.test.mjs` covers the pure grouping projection. This does not resolve the separately tracked historical `undefined.filter` quality blocker or constitute release approval.
+`list-ab.mjs` verifies individual lightweight Inbox/Assigned to Me task cards and Today/Next Seven Days date groups using the actual API and a fresh synthetic database. Spanning tasks appear once on their first visible date, ungenerated recurrence is not expanded, and counts reflect the full server result. It checks explicit private undated/unassigned capture, rejected input retention, IME submit/navigation barriers, detail autosave, completed-bottom undo, 1440/375/320 light/dark screenshots, visible individual 1px card borders, 8px card gaps/radii, no standing shadow, unclamped titles, checkbox/detail 44px hot areas, checkbox completion without opening details, exact 16px mobile title size, no horizontal overflow and computed text/token contrast. `frontend/tests/task-groups.test.mjs` covers the pure grouping projection. This does not constitute release approval.
 
 The runner checks default Today after login/restore, overdue and interval boundaries for Tomorrow/Next Seven Days, explicitly expanded completed groups, private unassigned/undated capture, archived inbox access, calendar inbox details, unsent input/IME barriers, smart completions and ten-second latest-item undo across authorized board scopes. It creates an actual repeated chain with archived history, comments and checklists; server preview cancellation, target-version 409, pending-attachment rejection, local-S3 quota 413, committed response loss and exact source/destination readback are exercised without automatic replay. The acknowledged success path also reads every preview ID in destination and verifies source 404.
 
 With the optional local S3 module, actual browser upload, download and sandboxed text preview preserve exact bytes after the archived task moves. Attachment URLs are checked under the new board scope. This is not evidence about real B2 credentials, CORS or retention.
 
-Theme acceptance includes light/dark/system, media changes, browser account isolation, the first authenticated workspace render after session restoration, native `color-scheme`/meta, real localStorage read/write failures, computed token contrast and 320/375 screenshots. Anonymous loading follows system or its anonymous preference; an unknown account preference cannot be applied before `/me` identifies the account. Task data is not stored in browser storage.
+Theme acceptance includes light/dark/system, media changes, browser account isolation, the first authenticated workspace render after session restoration, native `color-scheme`/meta, real localStorage read/write failures, computed token contrast and 320/375 screenshots. Anonymous loading follows system or its anonymous preference; an unknown account preference cannot be applied before `/me` identifies the account. Theme preferences do not store task data; the separately bounded draft-recovery feature uses same-tab sessionStorage as described in README.
 
 The six representative regressions remain independently executable: `completed-bottom-undo`, `drag-order`, `schedule-autosave`, `calendar`, `poll-revision`, `task-filter-metadata` under `frontend/test-browser/`. Their selectors use the new sidebar/drawer and reserved system inbox board/list IDs, retaining the business assertions. Explicit retry after an unknown autosave now opens read-only latest-version review before the user chooses to preserve local fields and write again.
 
@@ -79,8 +81,54 @@ All browser runners own and close their browser and test server in `finally`. Th
 
 ## Four orthogonal color palettes
 
-`node frontend/test-browser/color-themes.mjs` reuses the loopback synthetic-server pattern from `list-ab.mjs` (port 48771, so run sequentially). It requires the same existing Playwright/Chromium paths and built application; no `.env`, production SQLite or B2 access is used. It checks blue/iris/clay/graphite × light/dark core tokens and semantic states (normal text >=4.5, focus >=3), actual enabled completion-button foreground/background, the existing BoardView/calendar/search/detail surfaces, mobile drawer/picker and realistic long titles. Keyboard selection, legacy mode preservation, system media response, refresh, anonymous/account separation, storage denial, dirty IME draft DOM/selection/autosave, and completion undo after palette switching are representative workflow checks. The 58-case frontend unit suite retains two representative theme-helper tests rather than expanding a backend matrix. `three-pane.mjs` changes only its obsolete green meta-color expectation; all security and workflow assertions remain.
+`node frontend/test-browser/color-themes.mjs` reuses the loopback synthetic-server pattern from `list-ab.mjs` (port 48771, so run sequentially). It requires the same existing Playwright/Chromium paths and built application; no `.env`, production SQLite or B2 access is used. It checks blue/iris/clay/graphite × light/dark core tokens and semantic states (normal text >=4.5, focus >=3), actual enabled completion-button foreground/background, the existing BoardView/calendar/search/detail surfaces, mobile drawer/picker and realistic long titles. Keyboard selection, legacy mode preservation, system media response, refresh, anonymous/account separation, storage denial, dirty IME draft DOM/selection/autosave, and completion undo after palette switching are representative workflow checks. The frontend unit suite retains representative theme-helper tests rather than expanding a backend matrix. `three-pane.mjs` uses the current AppearancePicker buttons for mode selection and checks the selected button, preserving its security and workflow assertions.
 
-Palette keys add `.palette` to the original per-account mode keys. Palette and mode are independent; task data is never added to storage. Anonymous preferences are all that bootstrap can know before `/api/me`. Bootstrap remains synchronous, same-origin and CSP compatible. PDF paper remains white by design. The current N/dot placeholders follow brand tokens; the B2 logo is integrated and C2 remains a resource only. Disabled buttons intentionally retain the existing opacity treatment; contrast claims apply to enabled text and controls. Native platform picker popup rendering is not physical-device coverage.
+Palette keys add `.palette` to the original per-account mode keys. Palette and mode are independent; palette preferences never contain task data; eligible draft fields are stored separately for same-tab recovery. Anonymous preferences are all that bootstrap can know before `/api/me`. Bootstrap remains synchronous, same-origin and CSP compatible. PDF paper remains white by design. Disabled buttons intentionally retain the existing opacity treatment; contrast claims apply to enabled text and controls. Native platform picker popup rendering is not physical-device coverage.
 
-The historical `undefined.filter` Q1 remains **OPEN**; its root cause is not proven. Test passes do not establish a fix. The runner records exact unexpected stacks and retains expected unauthenticated `/api/me` 401 and missing `/favicon.ico` 404 diagnostics separately from application failures.
+## 当前批次：同一构建的集成验收
+
+先完成一次前端和后端构建，再固定同一二进制及 `frontend/dist` 运行以下命令。当前批次 runner 支持 `NORNS_BINARY` 绝对路径；未指定时仍使用项目的 `target/release/norns`（`exports.mjs`、`organization-view.mjs`、`templates.mjs` 和 `bulk-actions.mjs` 要求明确指定；`card-schedule.mjs` 固定读取项目 release 路径）。不要在运行期间重新构建或替换静态文件。保留二进制 SHA-256、dist 文件清单及每次进程的可执行文件哈希，避免把旧 debug 或其他构建的结果混为当前验收。
+
+```sh
+export NORNS_BINARY="$PWD/target/release/norns"
+# 使用上文已有 Playwright / Chromium / EVIDENCE_ROOT 配置；不自动安装依赖。
+# ZIP 原件下载与转移回归使用已安装的本地 s3rver：
+export LOCAL_S3_MODULE=/path/to/s3rver/lib/s3rver.js
+python3 tests/http_smoke.py
+node frontend/test-browser/task-capture.mjs
+node frontend/test-browser/draft-recovery.mjs
+node frontend/test-browser/exports.mjs
+node frontend/test-browser/organization-view.mjs
+node frontend/test-browser/templates.mjs
+node frontend/test-browser/bulk-actions.mjs
+node frontend/test-browser/completed-bottom-undo.mjs
+node frontend/test-browser/schedule-autosave.mjs
+node frontend/test-browser/card-schedule.mjs
+node frontend/test-browser/poll-revision.mjs
+node frontend/test-browser/calendar.mjs
+node frontend/test-browser/task-filter-metadata.mjs
+node frontend/test-browser/transfer-blur.mjs
+node frontend/test-browser/three-pane.mjs
+```
+
+串行执行；各 runner 会探测并独占其 loopback 测试端口，不是全部使用同一端口。`task-capture` / `draft-recovery` 使用 48786（可选 S3 为 48772），`exports` 使用 48871/48872；其余端口由各脚本定义。不要传生产数据库或桶。`http_smoke.py` 固定读取项目 release 二进制，因此该命令应与上述 `NORNS_BINARY` 指向同一文件。
+
+`task-capture` 验证候选日期明确采用、直接提交原文、修改后失效、IME、失败保留和各新增任务入口。`draft-recovery` 验证首次加载竞态、刷新、明确恢复与另行保存、无效日期编辑缓冲、独立评论/清单输入、账号隔离、权限撤销及未知创建不重放；不宣称恢复新建看板/列表缓冲或文件。
+
+`exports` 必须提供本地 S3 模块，实际经界面下载 CSV / JSON / ZIP 并解析任务 ID、Unicode、多行、CSV 公式保护和附件原件字节/哈希；同时检查范围、独立完成/归档选项、过期预览、取消及身份变化。下载内容与上限见[导出说明](exports.md)。它不是生产对象存储或灾难恢复备份验收。
+
+代表性 1440 / 375 截图、深浅色、长内容、键盘操作和缩短视口由实际浏览器 runner 留存；须人工查看截图，不能只根据无横向溢出断言宣布视觉验收。Chromium 窄屏及触屏模拟不是物理 Safari / iPhone 测试。本文列的是本地可执行命令，不声称存在未配置的 CI 工作流。
+
+## Private template UI
+
+`frontend/tests/templates.test.mjs` verifies strict source/edit/apply payloads, persisted acknowledgement checks, shared acknowledgement, and account-scoped unknown-outcome markers. Run the full unit suite, `npm run check` and `npm run build` from `frontend`.
+
+`frontend/test-browser/templates.mjs` uses a fresh synthetic SQLite database, an explicitly supplied current template-capable `NORNS_BINARY`, built `frontend/dist`, `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH`, and `EVIDENCE_ROOT`. It exercises persisted-task save/edit/apply, clean fresh identities, own-inbox/shared-board acknowledgement, conflicts, unknown committed responses, account switch, draft/IME protections and bounded 1440/375 dialogs. Existing `task-capture.mjs`, `draft-recovery.mjs`, `exports.mjs` and `organization-view.mjs` cover representative neighbouring regressions. Exports additionally needs `LOCAL_S3_MODULE`. No production database is used and no dependencies are installed by these runners.
+
+## 本地显示与批量操作
+
+`node frontend/test-browser/organization-view.mjs` 验证分组／日期排序零共享写入、切回真实手动顺序、跨日去重、已完成分离，以及详情／快速记录 DOM 和未保存输入保留、正常自动保存与无效日期离开屏障。
+
+`node frontend/test-browser/bulk-actions.mjs` 验证选择与完成独立、同板可见原任务上限、预览确认、原子独立字段修改、真实 CAS 冲突全不写、重复后继安全、提交后响应丢失不重放、账号切换、详情焦点恢复和 320/375 弹窗／底部按钮可达。它同时检查未提交表单和隐藏日期缓冲的刷新警告、恢复默认后不再警告、脏表单 Escape 放弃确认及取消后保留精确输入；不承诺刷新后恢复批量表单。
+
+这两项均使用上述已安装模块、当前 `NORNS_BINARY`、固定 `frontend/dist` 和独立 `EVIDENCE_ROOT`，只写合成数据库，不自动安装依赖。与模板、导出和既有日程回归串行运行。

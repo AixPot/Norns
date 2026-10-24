@@ -35,6 +35,8 @@ pub struct Task {
     board_title: String,
     list_id: i64,
     list_title: String,
+    position: i64,
+    list_position: i64,
 }
 
 #[derive(Serialize, FromRow)]
@@ -87,7 +89,7 @@ pub async fn list(
     let start = "COALESCE(json_extract(c.schedule,'$.start_date'),c.due_date)";
     let end = "COALESCE(json_extract(c.schedule,'$.end_date'),json_extract(c.schedule,'$.start_date'),c.due_date)";
     let mut q = QueryBuilder::<Sqlite>::new(
-        "SELECT c.id,c.title,c.description,c.completed,c.assignee_id,u.username AS assignee_name,c.due_date,c.schedule,b.id AS board_id,b.title AS board_title,l.id AS list_id,l.title AS list_title FROM cards c JOIN lists l ON l.id=c.list_id JOIN boards b ON b.id=l.board_id JOIN board_members m ON m.board_id=b.id LEFT JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=",
+        "SELECT c.id,c.title,c.description,c.completed,c.assignee_id,u.username AS assignee_name,c.due_date,c.schedule,b.id AS board_id,b.title AS board_title,l.id AS list_id,l.title AS list_title,c.position,l.position AS list_position FROM cards c JOIN lists l ON l.id=c.list_id JOIN boards b ON b.id=l.board_id JOIN board_members m ON m.board_id=b.id LEFT JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=",
     );
     q.push_bind(a.user.id);
     q.push(" AND (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id)");

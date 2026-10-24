@@ -8,7 +8,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,''),ev
 const password=crypto.randomBytes(24).toString('base64url'),base='http://127.0.0.1:48759';
 const env={PATH:process.env.PATH,DATABASE_URL:'sqlite://'+evidence+'/norns.sqlite',APP_ORIGIN:base,COOKIE_SECURE:'false',BIND_ADDR:'127.0.0.1:48759',STATIC_DIR:root+'/frontend/dist'};
 await new Promise((resolve,reject)=>{const probe=net.createServer();probe.once('error',reject);probe.listen(48759,'127.0.0.1',()=>probe.close(resolve))});
-assert.equal(spawnSync(root+'/target/release/norns',['init-admin','admin'],{env,input:password,cwd:evidence}).status,0);
+assert.equal(spawnSync((process.env.NORNS_BINARY||root+'/target/release/norns'),['init-admin','admin'],{env,input:password,cwd:evidence}).status,0);
 let server,browser;const errors=[];const checks=[];const log=fs.openSync(evidence+'/server.log','a');
 async function login(p){p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByLabel('用户名',{exact:true}).fill('admin');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录 Norns',exact:true}).click();await p.getByRole('heading',{name:'今天',exact:true}).waitFor()}
 async function rpc(p,path,body){return p.evaluate(async({path,body})=>{const me=await(await fetch('/api/me')).json();const r=await fetch('/api'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()}},{path,body})}
@@ -18,7 +18,7 @@ async function action(p,data){const b=await snapshot(p);const r=await rpc(p,'/bo
 
 async function shellNav(p,name,regex=false){if(await p.getByLabel('打开导航',{exact:true}).isVisible()){await p.getByLabel('打开导航',{exact:true}).click();await p.getByRole('dialog',{name:'导航'}).getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}else await p.getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}
 try{
- server=spawn(root+'/target/release/norns',[],{env,cwd:evidence,stdio:['ignore',log,log]});fs.closeSync(log);
+ server=spawn((process.env.NORNS_BINARY||root+'/target/release/norns'),[],{env,cwd:evidence,stdio:['ignore',log,log]});fs.closeSync(log);
  for(let i=0;i<100;i++){try{if((await fetch(base)).ok)break}catch{}await new Promise(r=>setTimeout(r,50))}
  browser=await chromium.launch({...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),headless:true,args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1440,height:900}}),p=await context.newPage();await login(p);

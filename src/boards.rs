@@ -6,7 +6,7 @@ use crate::{
 use axum::{
     Extension, Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Sqlite, Transaction};
@@ -78,7 +78,7 @@ pub struct Snapshot {
     checklist: Vec<ChecklistItem>,
     comments: Vec<Comment>,
 }
-async fn active(tx: &mut Transaction<'_, Sqlite>, a: &Actor) -> Result<()> {
+pub(crate) async fn active(tx: &mut Transaction<'_, Sqlite>, a: &Actor) -> Result<()> {
     let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.id=? AND u.active=1 AND s.expires_at>?)").bind(&a.session).bind(a.user.id).bind(now()).fetch_one(&mut **tx).await?;
     if !exists {
         return Err(error::unauthorized());
@@ -134,7 +134,7 @@ pub async fn list(
 pub struct Title {
     title: String,
 }
-fn title_valid(title: &str) -> Result<()> {
+pub(crate) fn title_valid(title: &str) -> Result<()> {
     if title.trim().is_empty() || title.len() > 500 {
         Err(error::invalid())
     } else {
@@ -179,9 +179,74 @@ pub struct Mutation {
     #[serde(flatten)]
     action: Action,
 }
+// Keep strictness local to this new action: deny_unknown_fields on Mutation or
+// Action would change legacy actions and is incompatible with the flattened envelope.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardFromTemplate {
+    list_id: i64,
+    template_id: i64,
+    expected_template_revision: i64,
+    #[serde(default)]
+    ack_shared_content: bool,
+}
+
+/// Strict newtype keeps legacy flattened mutation actions backwards compatible.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardsBulk {
+    selected: Vec<BulkSelected>,
+    changes: BulkChanges,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkSelected {
+    id: i64,
+    touch_version: i64,
+}
+// Empty struct variants enforce deny_unknown_fields; unit variants ignore extras.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+enum BulkSet<T> {
+    Keep {},
+    Set { value: T },
+}
+impl<T> Default for BulkSet<T> {
+    fn default() -> Self {
+        Self::Keep {}
+    }
+}
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+enum BulkSchedule {
+    Keep {},
+    Set {
+        value: Box<crate::schedule::Schedule>,
+    },
+    Clear {},
+}
+impl Default for BulkSchedule {
+    fn default() -> Self {
+        Self::Keep {}
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkChanges {
+    #[serde(default)]
+    target_list: BulkSet<i64>,
+    #[serde(default)]
+    schedule: BulkSchedule,
+    #[serde(default)]
+    completed: BulkSet<bool>,
+    #[serde(default)]
+    archived: BulkSet<bool>,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    CardsBulk(CardsBulk),
     CardSchedule {
         card_id: i64,
         schedule: Option<crate::schedule::Schedule>,
@@ -243,11 +308,14 @@ pub enum Action {
         list_id: i64,
         index: usize,
     },
+    CardFromTemplate(CardFromTemplate),
     CardCreate {
         list_id: i64,
         title: String,
         #[serde(default)]
         description: String,
+        #[serde(default)]
+        schedule: Option<crate::schedule::Schedule>,
     },
     CardUpdate {
         card_id: i64,
@@ -265,6 +333,7 @@ pub async fn mutate(
     State(s): State<AppState>,
     Extension(a): Extension<Actor>,
     Path(id): Path<i64>,
+    headers: HeaderMap,
     Json(input): Json<Mutation>,
 ) -> Result<Json<Snapshot>> {
     let mut tx = s.pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -294,6 +363,10 @@ pub async fn mutate(
         return Err(error::forbidden());
     }
     match input.action {
+        Action::CardsBulk(input) => {
+            crate::templates::write_auth(&mut tx, &a, &s, &headers).await?;
+            cards_bulk(&mut tx, id, input).await?;
+        }
         Action::CardSchedule { card_id, schedule } => {
             let card = require_card(&mut tx, id, card_id).await?;
             if card.completed {
@@ -494,10 +567,57 @@ pub async fn mutate(
                 .execute(&mut *tx)
                 .await?;
         }
+        Action::CardFromTemplate(CardFromTemplate {
+            list_id,
+            template_id,
+            expected_template_revision,
+            ack_shared_content,
+        }) => {
+            crate::templates::write_auth(&mut tx, &a, &s, &headers).await?;
+            require_list(&mut tx, id, list_id).await?;
+            let template = crate::templates::load(&mut tx, &a, template_id).await?;
+            if template.revision != expected_template_revision {
+                return Err(error::conflict());
+            }
+            if !private && !ack_shared_content {
+                return Err(error::Error(
+                    StatusCode::BAD_REQUEST,
+                    "shared_content_ack_required",
+                    "请确认模板内容将对目标看板成员可见",
+                ));
+            }
+            let position: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM cards WHERE list_id=?",
+            )
+            .bind(list_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            let card_id = next_card_id(&mut tx).await?;
+            sqlx::query(
+                "INSERT INTO cards(id,list_id,title,description,position) VALUES(?,?,?,?,?)",
+            )
+            .bind(card_id)
+            .bind(list_id)
+            .bind(template.title)
+            .bind(template.description)
+            .bind(position)
+            .execute(&mut *tx)
+            .await?;
+            for item in template.checklist {
+                let item_id: i64 = sqlx::query_scalar("UPDATE checklist_identity SET last_id=last_id+1 WHERE singleton=1 RETURNING last_id").fetch_one(&mut *tx).await?;
+                sqlx::query("INSERT INTO checklist_items(id,card_id,title,position,checked) VALUES(?,?,?,?,0)").bind(item_id).bind(card_id).bind(item.title).bind(item.position).execute(&mut *tx).await?;
+            }
+            // Checklist insert triggers count edits; creation-time inheritance is not processing.
+            sqlx::query("UPDATE cards SET touch_version=0 WHERE id=?")
+                .bind(card_id)
+                .execute(&mut *tx)
+                .await?;
+        }
         Action::CardCreate {
             list_id,
             title,
             description,
+            schedule,
         } => {
             title_valid(&title)?;
             description_valid(&description)?;
@@ -508,15 +628,26 @@ pub async fn mutate(
             .bind(list_id)
             .fetch_one(&mut *tx)
             .await?;
+            if let Some(s) = &schedule {
+                s.validate()?;
+            }
+            let series = schedule
+                .as_ref()
+                .filter(|s| s.repeat.is_some())
+                .map(|_| uuid::Uuid::new_v4().to_string());
             let new_id = next_card_id(&mut tx).await?;
             sqlx::query(
-                "INSERT INTO cards(id,list_id,title,description,position) VALUES(?,?,?,?,?)",
+                "INSERT INTO cards(id,list_id,title,description,position,schedule,due_date,series_id,anchor_schedule,occurrence_no) VALUES(?,?,?,?,?,?,?,?,?,1)",
             )
             .bind(new_id)
             .bind(list_id)
             .bind(title.trim())
             .bind(description)
             .bind(position)
+            .bind(schedule.as_ref().map(sqlx::types::Json))
+            .bind(schedule.as_ref().map(|s| &s.start_date))
+            .bind(series)
+            .bind(schedule.as_ref().map(sqlx::types::Json))
             .execute(&mut *tx)
             .await?;
         }
@@ -656,7 +787,7 @@ pub async fn mutate(
     Ok(Json(result))
 }
 
-fn description_valid(s: &str) -> Result<()> {
+pub(crate) fn description_valid(s: &str) -> Result<()> {
     if s.len() > 20000 {
         Err(error::invalid())
     } else {
@@ -874,4 +1005,188 @@ async fn next_card_id(tx: &mut Transaction<'_, Sqlite>) -> Result<i64> {
     )
     .fetch_one(&mut **tx)
     .await?)
+}
+
+async fn cards_bulk(tx: &mut Transaction<'_, Sqlite>, board: i64, input: CardsBulk) -> Result<()> {
+    use std::collections::{BTreeSet, HashSet};
+    let changes = input.changes;
+    if input.selected.is_empty()
+        || input.selected.len() > 100
+        || (matches!(changes.target_list, BulkSet::Keep {})
+            && matches!(changes.schedule, BulkSchedule::Keep {})
+            && matches!(changes.completed, BulkSet::Keep {})
+            && matches!(changes.archived, BulkSet::Keep {}))
+    {
+        return Err(error::invalid());
+    }
+    let mut ids = HashSet::new();
+    let mut cards = Vec::with_capacity(input.selected.len());
+    for selected in input.selected {
+        if selected.id <= 0 || selected.touch_version < 0 || !ids.insert(selected.id) {
+            return Err(error::invalid());
+        }
+        let card = require_card(tx, board, selected.id).await?;
+        if card.touch_version != selected.touch_version {
+            return Err(error::conflict());
+        }
+        cards.push(card);
+    }
+    if let BulkSet::Set { value } = changes.target_list {
+        require_list(tx, board, value).await?;
+    }
+    if let BulkSchedule::Set { value } = &changes.schedule {
+        value.validate()?;
+        if value.repeat.is_some() {
+            return Err(error::invalid());
+        }
+    }
+    // Validate every original before any write or successor withdrawal.
+    for card in &cards {
+        if !matches!(changes.schedule, BulkSchedule::Keep {})
+            && (card.completed
+                || card.series_id.is_some()
+                || card.schedule.as_ref().is_some_and(|s| s.repeat.is_some()))
+        {
+            return Err(error::Error(
+                StatusCode::BAD_REQUEST,
+                "bulk_schedule_state",
+                "批量日期仅支持未完成的非重复任务",
+            ));
+        }
+        if matches!(changes.completed, BulkSet::Set { value: true }) && card.archived {
+            return Err(error::Error(
+                StatusCode::BAD_REQUEST,
+                "archived_completion",
+                "请先恢复卡片，再完成此任务",
+            ));
+        }
+        if matches!(changes.completed, BulkSet::Set { value: false }) && card.completed {
+            let child: Option<(i64, i64)> =
+                sqlx::query_as("SELECT id,touch_version FROM cards WHERE predecessor_id=?")
+                    .bind(card.id)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            if let Some((id, touch)) = child {
+                if ids.contains(&id) {
+                    return Err(error::Error(
+                        StatusCode::CONFLICT,
+                        "bulk_successor_selected",
+                        "不能同时撤销前后两次任务",
+                    ));
+                }
+                if touch != 0 {
+                    return Err(error::Error(
+                        StatusCode::CONFLICT,
+                        "successor_touched",
+                        "下一次任务已有修改，不能撤销完成",
+                    ));
+                }
+                let data: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM comments WHERE card_id=?) OR EXISTS(SELECT 1 FROM attachments WHERE card_id=?) OR EXISTS(SELECT 1 FROM cards WHERE predecessor_id=?)")
+                    .bind(id).bind(id).bind(id).fetch_one(&mut **tx).await?;
+                if data {
+                    return Err(error::conflict());
+                }
+            }
+        }
+    }
+    let list_positions: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT id,position FROM lists WHERE board_id=?")
+            .bind(board)
+            .fetch_all(&mut **tx)
+            .await?;
+    cards.sort_by_key(|c| {
+        (
+            list_positions
+                .iter()
+                .find(|l| l.0 == c.list_id)
+                .map(|l| l.1)
+                .unwrap_or(0),
+            c.position,
+            c.id,
+        )
+    });
+    if let BulkSet::Set { value: target } = changes.target_list {
+        let moving: Vec<_> = cards.iter().filter(|c| c.list_id != target).collect();
+        if !moving.is_empty() {
+            let mut relevant = BTreeSet::new();
+            let mut position: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM cards WHERE list_id=?",
+            )
+            .bind(target)
+            .fetch_one(&mut **tx)
+            .await?;
+            relevant.insert(target);
+            for card in moving {
+                relevant.insert(card.list_id);
+                sqlx::query("UPDATE cards SET list_id=?,position=? WHERE id=?")
+                    .bind(target)
+                    .bind(position)
+                    .bind(card.id)
+                    .execute(&mut **tx)
+                    .await?;
+                position += 1;
+            }
+            // Include archived originals; keep every list's physical order stable.
+            for list in relevant {
+                let ordered: Vec<i64> =
+                    sqlx::query_scalar("SELECT id FROM cards WHERE list_id=? ORDER BY position,id")
+                        .bind(list)
+                        .fetch_all(&mut **tx)
+                        .await?;
+                for (pos, id) in ordered.into_iter().enumerate() {
+                    sqlx::query("UPDATE cards SET position=? WHERE id=? AND position<>?")
+                        .bind(pos as i64)
+                        .bind(id)
+                        .bind(pos as i64)
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
+        }
+    }
+    for card in &cards {
+        if !matches!(changes.schedule, BulkSchedule::Keep {}) {
+            let schedule = match &changes.schedule {
+                BulkSchedule::Set { value } => Some(value.as_ref()),
+                _ => None,
+            };
+            // Compare canonical JSON, not serialized optional-field spelling.
+            let old = card
+                .schedule
+                .as_ref()
+                .map(|v| serde_json::to_value(&v.0))
+                .transpose()
+                .map_err(|_| error::invalid())?;
+            let new = schedule
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|_| error::invalid())?;
+            if old != new || card.due_date.as_deref() != schedule.map(|s| s.start_date.as_str()) {
+                sqlx::query("UPDATE cards SET schedule=?,due_date=? WHERE id=?")
+                    .bind(schedule.map(sqlx::types::Json))
+                    .bind(schedule.map(|s| &s.start_date))
+                    .bind(card.id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
+    }
+    if let BulkSet::Set { value } = changes.completed {
+        for card in &cards {
+            // Re-read after move/date writes: successors inherit the final target and schedule.
+            let current = require_card(tx, board, card.id).await?;
+            complete_card(tx, &current, value).await?;
+        }
+    }
+    if let BulkSet::Set { value } = changes.archived {
+        for card in &cards {
+            sqlx::query("UPDATE cards SET archived=? WHERE id=? AND archived<>?")
+                .bind(value)
+                .bind(card.id)
+                .bind(value)
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
+    Ok(())
 }

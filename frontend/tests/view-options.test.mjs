@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import {compile} from 'svelte/compiler';
+test('display controls compile with explicit local-only preference contract',()=>{const source=fs.readFileSync(new URL('../src/ViewOptions.svelte',import.meta.url),'utf8');const result=compile(source,{filename:'ViewOptions.svelte',generate:'client'});assert.ok(result.js.code);assert.match(source,/显示/);assert.match(source,/分组/);assert.match(source,/排序/);assert.doesNotMatch(source,/fetch\(|api\(/)});

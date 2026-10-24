@@ -105,6 +105,13 @@ impl Storage {
             connect_origin: url.origin().ascii_serialization(),
         })
     }
+    // Crate-private exact original read. No URL/key enters export artifacts or diagnostics.
+    pub(crate) async fn export_original(&self, key: &str, expected: i64) -> Result<Vec<u8>> {
+        validate_size(expected, expected, self.max.min(64 * 1024 * 1024))?;
+        let bytes = self.bytes(key, expected).await?;
+        validate_size(expected, bytes.len() as i64, self.max)?;
+        Ok(bytes)
+    }
     async fn bytes(&self, key: &str, limit: i64) -> Result<Vec<u8>> {
         let url = io(self.bucket.presign_get(key, 60, None).await)?;
         let mut response = io(self.client.get(url).send().await)?

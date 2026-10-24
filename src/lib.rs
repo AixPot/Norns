@@ -3,9 +3,11 @@ mod auth;
 mod boards;
 mod db;
 mod error;
+mod exports;
 mod inbox;
 mod schedule;
 mod tasks;
+mod templates;
 mod users;
 pub use auth::init_admin;
 use axum::{
@@ -56,12 +58,24 @@ pub async fn app_with_static(url: &str, origin: &str, secure: bool, static_dir: 
         .route("/api/logout", post(auth::logout))
         .route("/api/admin/users", get(users::list).post(users::create))
         .route("/api/admin/users/{id}", axum::routing::patch(users::update))
+        .route(
+            "/api/templates",
+            get(templates::list).post(templates::create),
+        )
+        .route(
+            "/api/templates/{id}",
+            get(templates::get)
+                .patch(templates::update)
+                .delete(templates::delete),
+        )
         .route("/api/inbox", get(inbox::get))
         .route(
             "/api/inbox/cards/{card}/transfer-preview",
             get(inbox::preview),
         )
         .route("/api/inbox/cards/{card}/transfer", post(inbox::transfer))
+        .route("/api/exports/preview", post(exports::preview))
+        .route("/api/exports/download", post(exports::download))
         .route("/api/tasks", get(tasks::list))
         .route("/api/boards", get(boards::list).post(boards::create))
         .route("/api/boards/{id}", get(boards::get))

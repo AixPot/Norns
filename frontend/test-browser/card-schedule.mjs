@@ -10,11 +10,11 @@ const env={PATH:process.env.PATH,DATABASE_URL:'sqlite://'+evidence+'/norns.sqlit
 await new Promise((resolve,reject)=>{const probe=net.createServer();probe.once('error',reject);probe.listen(48759,'127.0.0.1',()=>probe.close(resolve))});
 assert.equal(spawnSync(root+'/target/release/norns',['init-admin','admin'],{env,input:password,cwd:evidence}).status,0);
 let server,browser;const errors=[];const checks=[];const log=fs.openSync(evidence+'/server.log','a');
-async function login(p){p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByLabel('用户名',{exact:true}).fill('admin');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录 Norns',exact:true}).click();await p.getByRole('heading',{name:'我的看板',exact:true}).waitFor()}
+async function login(p){p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByLabel('用户名',{exact:true}).fill('admin');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录 Norns',exact:true}).click();await p.getByRole('heading',{name:'今天',exact:true}).waitFor()}
 async function rpc(p,path,body){return p.evaluate(async({path,body})=>{const me=await(await fetch('/api/me')).json();const r=await fetch('/api'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()}},{path,body})}
-async function snapshot(p){return (await rpc(p,'/boards/1')).body}
+async function snapshot(p){return (await rpc(p,'/boards/2')).body}
 async function waitBoard(p,predicate){for(let i=0;i<100;i++){const b=await snapshot(p);if(predicate(b))return b;await p.waitForTimeout(50)}assert.fail('persisted board condition timed out')}
-async function action(p,data){const b=await snapshot(p);const r=await rpc(p,'/boards/1/mutate',{expected_revision:b.revision,...data});assert.equal(r.status,200);return r.body}
+async function action(p,data){const b=await snapshot(p);const r=await rpc(p,'/boards/2/mutate',{expected_revision:b.revision,...data});assert.equal(r.status,200);return r.body}
 try{
  server=spawn(root+'/target/release/norns',[],{env,cwd:evidence,stdio:['ignore',log,log]});fs.closeSync(log);
  for(let i=0;i<100;i++){try{if((await fetch(base)).ok)break}catch{}await new Promise(r=>setTimeout(r,50))}
@@ -23,15 +23,15 @@ try{
  await p.clock.install({time:new Date('2026-10-19T15:59:00Z')});await p.clock.resume();await login(p);
  assert.equal((await rpc(p,'/boards',{title:'卡片日期验收'})).status,201);
  await action(p,{action:'list_create',title:'待办'});
- for(const title of ['今天任务','明天任务','同日范围','跨日范围','部分时间','跨年很长任务标题'.repeat(5),'无日期'])await action(p,{action:'card_create',list_id:1,title});
+ for(const title of ['今天任务','明天任务','同日范围','跨日范围','部分时间','跨年很长任务标题'.repeat(5),'无日期'])await action(p,{action:'card_create',list_id:2,title});
  async function setSchedule(id,schedule){await action(p,{action:'card_schedule',card_id:id,schedule})}
  // Use the real edit API name discovered in the existing autosave contract.
  const fixtures=[{start_date:'2026-10-19'},{start_date:'2026-10-20',start_time:'09:00'},{start_date:'2026-10-19',start_time:'09:00',end_time:'11:00'},{start_date:'2026-10-19',end_date:'2026-10-20'},{start_date:'2026-10-19',end_date:'2026-10-20',end_time:'11:00'},{start_date:'2026-12-31',end_date:'2027-01-01',start_time:'09:00',end_time:'11:00'}];
  for(const [i,s] of fixtures.entries())await setSchedule(i+1,{timezone:'Asia/Shanghai',...s});
- await p.reload();await p.getByRole('button',{name:/卡片日期验收/}).waitFor();
+ await p.reload();await p.getByRole('button',{name:'卡片日期验收',exact:true}).waitFor();
  await p.evaluate(()=>{const add=document.addEventListener.bind(document),remove=document.removeEventListener.bind(document),set=window.setTimeout.bind(window),clear=window.clearTimeout.bind(window);window.scheduleListeners=new Set();window.scheduleTimers=new Set();document.addEventListener=(type,fn,...rest)=>{if(type==='visibilitychange')window.scheduleListeners.add(fn);return add(type,fn,...rest)};document.removeEventListener=(type,fn,...rest)=>{if(type==='visibilitychange')window.scheduleListeners.delete(fn);return remove(type,fn,...rest)};window.setTimeout=(fn,delay,...args)=>{let id=set(()=>{window.scheduleTimers.delete(id);fn(...args)},delay);if(delay>=60000)window.scheduleTimers.add(id);return id};window.clearTimeout=id=>{window.scheduleTimers.delete(id);clear(id)}});
- await p.getByRole('button',{name:/卡片日期验收/}).click();
- const card=id=>p.locator('.card').nth(id-1);
+ await p.getByRole('button',{name:'卡片日期验收',exact:true}).click();
+ const card=id=>p.locator(`[data-card-id="${id}"]`);
  if(!process.env.MOBILE_ONLY){
  for(const [id,label] of [[1,'今天'],[2,'明天 09:00'],[3,'今天 09:00–11:00'],[4,'今天—明天'],[5,'今天—明天 11:00'],[6,'2026/12/31 09:00—2027/1/1 11:00']])assert.equal(await card(id).locator('.card-schedule').innerText(),label);
  assert.equal(await card(7).locator('.card-schedule').count(),0);
@@ -74,7 +74,7 @@ try{
  for(const g of geometry){assert.ok(g.left>=g.editorLeft-1&&g.right<=g.editorRight+1,`${g.width}x${g.height} ${g.label} overflows editor: ${JSON.stringify(g)}`);assert.ok(g.top>=g.bodyTop-1&&g.bottom<=g.bodyBottom+1,`focused field outside body: ${JSON.stringify(g)}`);assert.ok(g.scroll<=g.client+1,`${g.width} ${g.label}: nested horizontal overflow`)}
  checks.push('320/375 mobile input bounds at 844/440 heights, endpoints and until persisted, long title/card fits');
  const mounted=await p.evaluate(()=>({listeners:window.scheduleListeners.size,timers:window.scheduleTimers.size}));assert.ok(mounted.listeners>=1);assert.equal(mounted.timers,1);
- await p.getByRole('button',{name:'← 我的看板',exact:true}).click();await p.getByRole('heading',{name:'我的看板',exact:true}).waitFor();const unmounted=await p.evaluate(()=>({listeners:window.scheduleListeners.size,timers:window.scheduleTimers.size}));assert.equal(unmounted.listeners,0);assert.equal(unmounted.timers,0);checks.push('board unmount removes visibility listeners and midnight timeout');
+ if(await p.getByLabel('打开导航',{exact:true}).isVisible()){await p.getByLabel('打开导航',{exact:true}).click();await p.getByRole('dialog',{name:'导航'}).getByRole('button',{name:'账号管理',exact:true}).click()}else await p.locator('.function-rail,.three-pane-nav').getByRole('button',{name:'账号管理',exact:true}).click();await p.getByRole('heading',{name:'账号管理',exact:true}).waitFor();const unmounted=await p.evaluate(()=>({listeners:window.scheduleListeners.size,timers:window.scheduleTimers.size}));assert.equal(unmounted.listeners,0);assert.equal(unmounted.timers,0);checks.push('board unmount removes visibility listeners and midnight timeout');
  assert.deepEqual(errors,[]);fs.writeFileSync(evidence+'/result.json',JSON.stringify({passed:true,checks,geometryChecks:geometry.length,pageErrors:errors},null,2));console.log('PASS '+evidence);
 }catch(e){fs.writeFileSync(evidence+'/failure.txt',e.stack);console.error('FAIL '+evidence,e);if(browser)for(const c of browser.contexts())for(const p of c.pages())await p.screenshot({path:evidence+'/failure.png'}).catch(()=>{});process.exitCode=1}
 finally{if(browser)await browser.close();if(server&&server.exitCode===null){server.kill('SIGINT');await new Promise(r=>server.once('exit',r))}}

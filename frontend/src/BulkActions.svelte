@@ -1,0 +1,40 @@
+<script lang="ts">
+ import {onMount,untrack,onDestroy} from 'svelte';
+ import {bulkChanges,bulkSafety} from './task-selection.mjs';
+ import type {Board,Card,BulkChanges} from './types';
+ let {source,originals,onrefresh,onsubmit,onclose}:{source:Board;originals:Card[];onrefresh:()=>Promise<Board>;onsubmit:(changes:BulkChanges)=>Promise<void>;onclose:()=>void}=$props();
+ let current=$state(untrack(()=>source)),cards=$state(untrack(()=>originals)),list=$state('keep'),dates=$state('keep'),completed=$state('keep'),archived=$state('keep'),start=$state(''),end=$state(''),startTime=$state(''),endTime=$state(''),confirmed=$state(false),working=$state(false),blocked=$state(false),message=$state(''),success=$state(false);
+ let panel:HTMLDivElement,alive=true;onDestroy(()=>alive=false);
+ function changes():BulkChanges{return bulkChanges(current,{target_list:list==='keep'?{op:'keep'}:{op:'set',value:Number(list)},schedule:dates==='set'?{op:'set',value:{start_date:start,...(end?{end_date:end}:{}),...(startTime?{start_time:startTime}:{}),...(endTime?{end_time:endTime}:{}),timezone:'Asia/Shanghai'}}:{op:dates},completed:completed==='keep'?{op:'keep'}:{op:'set',value:completed==='true'},archived:archived==='keep'?{op:'keep'}:{op:'set',value:archived==='true'}}) as BulkChanges}
+ const validation=$derived.by(()=>{try{return bulkSafety(cards,changes())}catch(e){return e instanceof Error?e.message:'请检查修改'}});
+ async function send(){if(working||blocked||!confirmed||validation)return;working=true;message='';try{await onsubmit(changes());if(!alive)return;success=true;blocked=true;message=`已原子更新 ${cards.length} 个所选原任务。新后继未被选择或归档；无批量撤销。`}catch(e){if(!alive)return;const error=e as any;blocked=true;message=error.status===409?(error.code&&error.code!=='conflict'?`操作被安全拒绝（${error.code}）：${error.message}。请调整选择或只读刷新核对；没有自动重试。`:'版本已变化，整批未应用。选择已保留，请重新读取、核对并再次明确确认。'):!error.status||error.status>=500?'写入结果未知，已阻止写入和重放。请关闭后只读核对最新版本并明确恢复。':`操作未应用（${error.status}${error.code?' / '+error.code:''}）：${error.message||'服务器拒绝了请求，请核对输入'}。输入和选择已保留。`}finally{if(alive)working=false}}
+ async function refresh(){if(working||success)return;working=true;try{const fresh=await onrefresh();if(!alive)return;current=fresh;cards=cards.map(c=>fresh.cards.find(v=>v.id===c.id)!).filter(Boolean);blocked=false;confirmed=false;message='已重新读取，请逐项核对当前原任务和版本后再次确认。'}catch(e){if(!alive)return;message=e instanceof Error?e.message:'读取失败'}finally{if(alive)working=false}}
+ function close(){if(!working)onclose()}
+ const dirty=$derived(!success&&(list!=='keep'||dates!=='keep'||completed!=='keep'||archived!=='keep'||!!start||!!end||!!startTime||!!endTime));
+ export function hasPending(){return alive&&working}
+ // Modal-local buffers are guarded, not persisted or submitted during unload.
+ export function hasUnsaved(){return alive&&(working||dirty)}
+ onMount(()=>{
+  const previous=document.activeElement as HTMLElement,shell=document.querySelector<HTMLElement>('.app-shell');if(shell)shell.inert=true;panel.focus();
+  const keys=(e:KeyboardEvent)=>{if(e.isComposing)return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(!working&&(!dirty||confirm('批量修改有未保存输入，放弃这些修改并关闭？')))close()}if(e.key==='Tab'){const nodes=Array.from(panel.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled)')).filter(n=>n.getClientRects().length);if(e.shiftKey&&(document.activeElement===nodes[0]||document.activeElement===panel)){e.preventDefault();nodes.at(-1)?.focus()}else if(!e.shiftKey&&(document.activeElement===nodes.at(-1)||document.activeElement===panel)){e.preventDefault();nodes[0]?.focus()}}};document.addEventListener('keydown',keys,true);
+  return()=>{document.removeEventListener('keydown',keys,true);if(shell)shell.inert=!!document.querySelector('.task-panel')&&innerWidth<=640;queueMicrotask(()=>{if(previous?.isConnected&&!previous.closest('[inert]'))previous.focus({preventScroll:true})})};
+ });
+</script>
+<div class="transfer-shade"><div class="dialog bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-heading" tabindex="-1" bind:this={panel}>
+ <header><h2 id="bulk-heading">批量修改 · {cards.length} 个任务</h2><button aria-label="关闭批量修改" disabled={working} onclick={close}>✕</button></header>
+ <div class="bulk-body"><p>同一来源看板：{current.title} · 确认版本 {current.revision}。一次提交，全部成功或全部不变。</p>
+ <p class="muted">移动按服务器实际列表/卡片顺序追加，不按当前日期排序。日期仅限未完成、非重复任务。归档任务须先单独恢复，不能同时完成。重复完成可能生成一个未完成后继；撤销完成受后继是否编辑限制，服务器最终校验。无批量撤销。</p>
+ <details><summary>核对所选原任务、当前值与触碰版本 ({cards.length})</summary><ol>{#each cards as c}<li><strong>{c.title}</strong> · ID {c.id} · touch {c.touch_version}<br/>{current.lists.find(l=>l.id===c.list_id)?.title} · {c.completed?'已完成':'未完成'} · {c.archived?'已归档':'未归档'} · {c.schedule?JSON.stringify(c.schedule):'无日期'}</li>{/each}</ol></details>
+ <fieldset disabled={working||success} oninput={()=>confirmed=false} onchange={()=>confirmed=false}><legend>独立修改（混合值默认保持不变）</legend>
+ <label>目标列表<select aria-label="批量目标列表" bind:value={list}><option value="keep">保持不变</option>{#each current.lists as l}<option value={String(l.id)}>移到：{l.title}</option>{/each}</select></label>
+ <label>日期<select aria-label="批量日期" bind:value={dates}><option value="keep">保持不变</option><option value="set">设置完整日期（不重复）</option><option value="clear">明确清除日期</option></select></label>
+ {#if dates==='set'}<div class="bulk-date-grid"><label>开始日期<input aria-label="批量开始日期" type="date" bind:value={start}/></label><label>结束日期（可选）<input aria-label="批量结束日期" type="date" bind:value={end}/></label><label>开始时间（可选）<input aria-label="批量开始时间" type="time" bind:value={startTime}/></label><label>结束时间（可选）<input aria-label="批量结束时间" type="time" bind:value={endTime}/></label></div>{/if}
+ <label>完成状态<select aria-label="批量完成状态" bind:value={completed}><option value="keep">保持不变</option><option value="true">设为已完成</option><option value="false">设为未完成（安全撤销）</option></select></label>
+ <label>归档状态<select aria-label="批量归档状态" bind:value={archived}><option value="keep">保持不变</option><option value="true">归档所选原任务</option><option value="false">恢复所选原任务</option></select></label>
+ </fieldset>
+ </div><div class="bulk-footer">{#if validation&&!success}<p role="status">{validation}</p>{/if}{#if message}<p class="alert" role="status">{message}</p>{/if}
+ {#if !success}<label class="bulk-ack"><input type="checkbox" aria-label="确认精确批量修改" bind:checked={confirmed} disabled={working||blocked||!!validation}/>已核对以上 {cards.length} 个原任务、touch 和版本 {current.revision}，按所选独立修改一次提交。</label><button class="primary" disabled={working||blocked||!confirmed||!!validation} onclick={send}>{working?'正在提交…':'确认原子提交'}</button><button class="secondary" disabled={working} onclick={refresh}>重新读取并核对所选原任务</button>{/if}</div>
+</div></div>
+<style>
+ .bulk-dialog{display:flex;flex-direction:column;padding:0;max-width:660px;overflow:hidden;width:min(660px,calc(100vw - 24px));max-height:calc(100dvh - 24px);min-width:0;box-sizing:border-box}.bulk-dialog header{padding:16px 20px;flex-shrink:0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px}.bulk-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px 20px}.bulk-body>p{margin-bottom:12px}.bulk-footer{padding:10px 16px;flex-shrink:0;border-top:1px solid var(--border);background:var(--surface)}.bulk-footer .alert{margin-bottom:6px}.bulk-footer .bulk-ack{margin:8px 0;font-weight:400}.bulk-dialog fieldset{min-width:0;display:grid;gap:12px;margin:16px 0}.bulk-dialog label{min-width:0;display:grid;gap:6px}.bulk-dialog input,.bulk-dialog select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px}.bulk-dialog .bulk-ack{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin:14px 0}.bulk-ack input{width:22px;min-height:22px;flex-shrink:0}.bulk-dialog button{min-height:44px;margin:4px}.bulk-date-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.bulk-dialog ol{max-height:180px;overflow:auto;overflow-wrap:anywhere}.bulk-dialog summary{cursor:pointer;min-height:44px}@media(max-width:640px){.bulk-date-grid{grid-template-columns:minmax(0,1fr)}}
+</style>

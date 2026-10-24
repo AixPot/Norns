@@ -3,8 +3,8 @@ for(const name of ['PLAYWRIGHT_MODULE','CHROMIUM_PATH','EVIDENCE_ROOT'])if(!proc
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE);
 const root=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,''),out=process.env.EVIDENCE_ROOT+'/latency-'+Date.now();fs.mkdirSync(out,{recursive:true,mode:0o700});const base='http://127.0.0.1:48763',password=crypto.randomBytes(24).toString('base64url');
 const env={PATH:process.env.PATH,DATABASE_URL:'sqlite://'+out+'/synthetic.sqlite',BIND_ADDR:'127.0.0.1:48763',APP_ORIGIN:base,COOKIE_SECURE:'false',STATIC_DIR:root+'/frontend/dist'};
-await new Promise((r,j)=>{let s=net.createServer();s.once('error',j);s.listen(48763,'127.0.0.1',()=>s.close(r))});assert.equal(spawnSync(root+'/target/release/norns',['init-admin','probe'],{input:password,env,cwd:out}).status,0);
-const log=fs.openSync(out+'/server.log','a');let server=spawn(root+'/target/release/norns',[],{env,cwd:out,stdio:['ignore',log,log]}),browser;fs.closeSync(log);let results=[];
+await new Promise((r,j)=>{let s=net.createServer();s.once('error',j);s.listen(48763,'127.0.0.1',()=>s.close(r))});assert.equal(spawnSync((process.env.NORNS_BINARY||root+'/target/release/norns'),['init-admin','probe'],{input:password,env,cwd:out}).status,0);
+const log=fs.openSync(out+'/server.log','a');let server=spawn((process.env.NORNS_BINARY||root+'/target/release/norns'),[],{env,cwd:out,stdio:['ignore',log,log]}),browser;fs.closeSync(log);let results=[];
 
 async function shellNav(p,name,regex=false){if(await p.getByLabel('打开导航',{exact:true}).isVisible()){await p.getByLabel('打开导航',{exact:true}).click();await p.getByRole('dialog',{name:'导航'}).getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}else await p.getByRole('button',{name:regex?new RegExp(name):name,exact:!regex}).click()}
 try{for(let i=0;i<100;i++){try{if((await fetch(base)).ok)break}catch{}await new Promise(r=>setTimeout(r,50))}
