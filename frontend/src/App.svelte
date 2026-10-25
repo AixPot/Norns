@@ -1,4 +1,11 @@
 <script lang="ts">
+ import PwaStatus from './PwaStatus.svelte';
+ import PwaInstall from './PwaInstall.svelte';
+ import {createCompletionMotion} from "./completion-motion.mjs";
+ import "./completion-motion.css";
+ let completionMotion=$state<any[]>([]);
+ const motion=createCompletionMotion({change:(entries:any[])=>completionMotion=entries,reduced:()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches});
+ onDestroy(()=>motion.clear());
  import {createDraftRecoveryStore,encodeScheduleEditor,decodeScheduleEditor} from './draft-recovery.mjs';
  import BulkActions from './BulkActions.svelte';
  import {toggleSelection,selectVisible,pruneSelection,prepareBulk,bulkChanges,bulkSafety,bulkUncertainty} from './task-selection.mjs';
@@ -67,10 +74,11 @@
  import SmartTasks from './SmartTasks.svelte';
  import {createViewPreferences} from './view-preferences.mjs';
  import type {ViewPreferences} from './types';
+ let displayLayout=$state<'wide'|'narrow'>(typeof window!=='undefined'&&window.matchMedia('(max-width:800px)').matches?'narrow':'wide');
  let displayVersion=$state(0);let displayStore=$state<ReturnType<typeof createViewPreferences>|null>(null);
  function displayScope(surface:string,scope:string){return {surface,scope}}
- function displayValue(surface:string,scope:string):ViewPreferences{void displayVersion;return displayStore?.get(displayScope(surface,scope))||{group:'default',sort:'manual'}}
- function displayChange(uid:number,surface:string,scope:string,value:ViewPreferences){if(user?.id!==uid)return;if(displayStore?.set(displayScope(surface,scope),value))displayVersion++}
+ function displayValue(surface:string,scope:string):ViewPreferences{void displayVersion;return displayStore?.get(displayScope(surface,scope),displayLayout)||{group:'default',sort:'manual'}}
+ function displayChange(uid:number,surface:string,scope:string,value:ViewPreferences){if(user?.id!==uid)return;if(displayStore?.set(displayScope(surface,scope),value,displayLayout))displayVersion++}
  import {captureLeaveGuard} from './TaskCapture.svelte';
  import NavigationDrawer from './NavigationDrawer.svelte';
  import TransferDialog from './TransferDialog.svelte';
@@ -183,6 +191,7 @@
  let completion=$state<CompletionNotice|null>(null);
  const feedback=createCompletionFeedback({change:(item:CompletionNotice|null)=>completion=item});
  onDestroy(()=>feedback.clear());
+ $effect(()=>{const scope=`${user?.id}:${view}:${smartRoute}:${inboxArchive}`;void scope;motion.clear()});
  $effect(()=>{
   if(completion){
    const c=board?.cards.find(c=>c.id===completion!.card);
@@ -253,7 +262,7 @@
   const capture=captureLeaveGuard(()=>[smartRef,boardRef]),uid=user?.id,token=requestEpoch;
   const ready=()=>uid===user?.id&&capture();
   if(!ready())return;
-  if(await leaveDraft()&&token===requestEpoch&&ready())await run(ready);
+  if(await leaveDraft()&&token===requestEpoch&&ready()){motion.clear();await run(ready)}
  }
  function changed(immediate=false){detailEdited();if(!recoveryHold)autosave?.change(immediate)}
  function composition(active:boolean){if(active)detailEdited();if(!recoveryHold)autosave?.composition(active)}
@@ -283,11 +292,11 @@
   busy=false;clearSelection();bulkOpen=false;bulkPreparing=false;bulkSource=null;bulkPreview=null;bulkReturn=undefined;bulkSafetyStore=null;
   exportOpen=false;moreOpen=false;
   detailRef?.persistPending();persistDetail();smartRef?.persistRecovery();boardRef?.persistRecovery();clearTimeout(detailTimer);if(recovery)recovery.closed=true;recovery=null;detailRecovery=null;recoveryHold=false;inboxList=0;
-  identity.switch(null);++boardsSequence;++inboxSequence;++inboxMetadataSequence;++epoch;++requestEpoch;feedback.clear();autosave?.stop();autosave=null;rebaseDraft=null;writer=null;displayStore=null;displayVersion++;user=null;board=null;draft=null;boards=[];inbox=null;inboxHistory=null;inboxArchive=false;pendingCards=[];drawer=false;transferOpen=false;transferCommand=null;uncertainScope=0;setCsrf('');theme?.identity(null);templateOpen=false;templateSource=null;templateTarget=null;templateUnknown=false;templateReturn=undefined;
+  motion.clear();identity.switch(null);++boardsSequence;++inboxSequence;++inboxMetadataSequence;++epoch;++requestEpoch;feedback.clear();autosave?.stop();autosave=null;rebaseDraft=null;writer=null;displayStore=null;displayVersion++;user=null;board=null;draft=null;boards=[];inbox=null;inboxHistory=null;inboxArchive=false;pendingCards=[];drawer=false;transferOpen=false;transferCommand=null;uncertainScope=0;setCsrf('');theme?.identity(null);templateOpen=false;templateSource=null;templateTarget=null;templateUnknown=false;templateReturn=undefined;
  }
  function fail(e:unknown){
   if((e as any)?.stale)return;
-  if(e instanceof ApiError&&[401,403,404].includes(e.status))feedback.clear();
+  if(e instanceof ApiError&&[401,403,404].includes(e.status)){motion.clear();feedback.clear()}
   error=e instanceof Error?e.message:'网络连接失败，请重试';
   if(e instanceof ApiError&&e.status===401)clearSession();
   if(e instanceof ApiError&&[403,404].includes(e.status)){clearSelection();if(board&&recovery)for(const record of recovery.store.list().records||[])if(record.scope.boardId===board.id)recovery.store.removeIfGeneration(record.scope,record.generation);++epoch;++requestEpoch;autosave?.stop();autosave=null;rebaseDraft=null;writer=null;board=null;draft=null;void loadBoards()}
@@ -297,12 +306,13 @@
  async function loadInbox(){const ticket=identity.ticket(),seq=++inboxSequence,summary=inboxMetadataSequence;try{const data=await api<Board>('/inbox');if(identity.accept(ticket)&&seq===inboxSequence){if(summary===inboxMetadataSequence)inbox={id:data.id,title:data.title,revision:data.revision};if(inbox?.id===data.id)inboxList=data.lists[0]?.id||0}}catch(e){if(identity.accept(ticket)&&seq===inboxSequence)fail(e)}}
  function authenticated(me:{user:User;csrf:string}){clearSelection();bulkSafetyStore=bulkUncertainty(me.user.id);uncertainScope=bulkSafetyStore.board();inboxList=0;++inboxSequence;++inboxMetadataSequence;identity.switch(me.user.id);setCsrf(me.csrf);theme?.identity(me.user.id);user=me.user;templateSafety=templateUncertainty(me.user.id);templateUnknown=templateSafety.blocked();displayStore=createViewPreferences({accountId:me.user.id});displayVersion++;recovery=recoveryFor(me.user.id);{const owner=recovery;for(const record of owner.store.list().records||[])void owner.load(record.scope)}smartRoute=initialRoute();view='smart';inboxArchive=false;inboxHistory=null;board=null;boards=[];inbox=null;taskFilters={q:'',view:'all',status:'all',assignee_id:'',board_id:'',from:'',to:''}}
  onMount(()=>{
+  const layoutMedia=matchMedia('(max-width:800px)'),layoutChanged=()=>{displayLayout=layoutMedia.matches?'narrow':'wide'};layoutChanged();layoutMedia.addEventListener('change',layoutChanged);
   onUnauthorized(clearSession);
   let storage:Storage|undefined;try{storage=localStorage}catch{}
   theme=createTheme({storage,media:matchMedia('(prefers-color-scheme: dark)'),apply:(value:string,preference:string,palette:string)=>{themePreference=preference;themePalette=palette;document.documentElement.dataset.palette=palette;const favicon=document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');if(favicon)favicon.href=`/brand/favicon-${palette}-${value}.svg`;document.documentElement.dataset.theme=value;document.documentElement.style.colorScheme=value;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim())}});
   const external=(e:StorageEvent)=>theme?.external(e.key,e.newValue);window.addEventListener('storage',external);
   void (async()=>{try{const me=await api<{user:User;csrf:string}>('/me');authenticated(me);await Promise.all([loadBoards(),loadInbox()])}catch(e){if(!(e instanceof ApiError&&e.status===401))fail(e)}finally{ready=true;requestAnimationFrame(()=>requestAnimationFrame(()=>document.documentElement.classList.add('theme-ready')))}})();
-  return()=>{onUnauthorized(null);theme?.stop();document.documentElement.classList.remove('theme-ready');window.removeEventListener('storage',external)};
+  return()=>{layoutMedia.removeEventListener('change',layoutChanged);onUnauthorized(null);theme?.stop();document.documentElement.classList.remove('theme-ready');window.removeEventListener('storage',external)};
  });
  async function login(){busy=true;error='';try{const result=await api<{user:User;csrf:string}>('/login','POST',{username,password});authenticated(result);password='';await Promise.all([loadBoards(),loadInbox()])}catch(e){fail(e)}finally{busy=false}}
  async function logout(){const owner=recovery;detailRef?.persistPending();persistDetail();smartRef?.persistRecovery();boardRef?.persistRecovery();if((draft||smartRef?.hasPending()||boardRef?.hasPending()||owner?.store.list().records?.length)&&!confirm('退出将清除此账号在当前标签页的本地草稿，继续？'))return;busy=true;try{await api('/logout','POST',{});clearSession();await tick();owner?.store.clearAccount()}catch(e){fail(e)}finally{busy=false}}
@@ -324,15 +334,16 @@
  function completeTask(task:TaskResult):Promise<boolean>{
   if(uncertainScope){error='结果未知，请先只读核对并明确恢复';return Promise.resolve(false)}
   if(pendingCards.includes(task.id))return Promise.resolve(false);pendingCards=[...pendingCards,task.id];
+   const visual=motion.begin(task,!task.completed);let success=false;
   const uid=user?.id,ticket=identity.ticket();const work=taskSerial.then(async()=>{
    if(!identity.accept(ticket)||!uid||user?.id!==uid||transferOpen||!await leaveDraft())return false;
    await writer?.idle();const token=++requestEpoch;
    try{const fresh=await api<Board>(`/boards/${task.board_id}`);if(token!==requestEpoch||uid!==user?.id)return false;
     if(!boards.some(b=>b.id===task.board_id)&&inbox?.id!==task.board_id)return false;
     const card=fresh.cards.find(c=>c.id===task.id&&!c.archived);if(!card||card.completed!==task.completed){++taskRefresh;return false}
-    feedback.clear();board=fresh;writer=null;return await mutate({action:'card_complete',card_id:task.id,completed:!task.completed})==='success';
+    feedback.clear();board=fresh;writer=null;success=await mutate({action:'card_complete',card_id:task.id,completed:!task.completed})==='success';return success;
    }catch(e){if(token===requestEpoch)fail(e);return false}
-  }).finally(()=>{pendingCards=pendingCards.filter(id=>id!==task.id)});taskSerial=work.then(()=>{},()=>{});return work;
+  }).finally(()=>{motion.finish(visual,success);pendingCards=pendingCards.filter(id=>id!==task.id)});taskSerial=work.then(()=>{},()=>{});return work;
  }
  async function showInboxArchive(){await navigate(async ready=>{if(!user)return;const token=++requestEpoch,uid=user.id;try{const fresh=await api<Board>('/inbox');if(token!==requestEpoch||uid!==user?.id||!ready())return;feedback.clear();board=fresh;inboxHistory=fresh;writer=null;inboxArchive=true}catch(e){fail(e)}})}
  async function startTransfer(){
@@ -368,7 +379,7 @@
   }catch(e){if(token===requestEpoch)fail(e)}
  }
  async function closeDetail(){if(await leaveDraft()&&(view==='tasks'||view==='calendar'||view==='smart')){++requestEpoch;board=null;++taskRefresh}}
- async function taskFilter(change:()=>void){if(await leaveDraft()){clearSelection();++requestEpoch;board=null;change();++taskRefresh}}
+ async function taskFilter(change:()=>void){if(await leaveDraft()){motion.clear();clearSelection();++requestEpoch;board=null;change();++taskRefresh}}
  type MutationResult='success'|'failed';
  async function mutate(data:Record<string,unknown>):Promise<MutationResult>{
   if(!board||!user)return 'failed';
@@ -384,8 +395,9 @@
   const card=data.action==='card_complete'?Number(data.card_id):0;
   if(card&&pendingCards.includes(card))return false;
   if(card)pendingCards=[...pendingCards,card];
-  try{if(draft&&!await leaveDraft())return false;if(board?.id!==owner||user?.id!==uid||requestEpoch!==token)return false;return await mutate(data)==='success'}
-  finally{if(card)pendingCards=pendingCards.filter(id=>id!==card)}
+  const record=board?.cards.find(c=>c.id===card),visual=record?motion.begin(record,!!data.completed):null;let success=false;
+  try{if(draft&&!await leaveDraft())return false;if(board?.id!==owner||user?.id!==uid||requestEpoch!==token)return false;success=await mutate(data)==='success';return success}
+  finally{if(visual)motion.finish(visual,success);if(card)pendingCards=pendingCards.filter(id=>id!==card)}
  }
 
  async function boardMove(intent:any):Promise<boolean>{
@@ -455,7 +467,8 @@
   const id=draft?.id,completionAction=data.action==='card_complete';
   if(completionAction&&id&&pendingCards.includes(id))return false;
   if(completionAction&&id)pendingCards=[...pendingCards,id];
-  try{return await runDetailAction(data)}finally{if(completionAction&&id)pendingCards=pendingCards.filter(c=>c!==id)}
+  const visual=completionAction&&draft&&board?motion.begin({...draft,board_id:board.id,board_title:board.title,list_title:board.lists.find(l=>l.id===draft?.list_id)?.title||''},!!data.completed):null;let success=false;
+  try{success=await runDetailAction(data);return success}finally{if(visual)motion.finish(visual,success);if(completionAction&&id)pendingCards=pendingCards.filter(c=>c!==id)}
  }
  async function runDetailAction(data:Record<string,unknown>):Promise<boolean>{
   if(!draft||!board||!autosave||recoveryHold)return false;
@@ -483,6 +496,7 @@
  }
 </script>
 <svelte:window onpagehide={()=>{detailRef?.persistPending();persistDetail();smartRef?.persistRecovery();boardRef?.persistRecovery()}} onbeforeunload={e=>{if(bulkPreparing||bulkOpen&&bulkRef?.hasUnsaved()||templateOpen&&templateRef?.hasPending()||writer?.pending()||autosave?.pending()||detailRef?.hasPending()||smartRef?.hasPending()||boardRef?.hasPending()){e.preventDefault();e.returnValue=''}}}/>
+<PwaStatus/>
 {#if !ready}<main class="login-shell"><p>正在连接 Norns…</p></main>
 {:else if !user}
 <main class="login-shell"><section class="login-card"><a class="brand" href="/"><BrandMark/><Wordmark/></a><div class="login-copy"><span class="eyebrow">让工作井然有序</span><h1>专注下一步。</h1><p>把想法变成卡片，让进展清晰可见。</p></div>{#if error}<div class="alert" role="alert">{error}</div>{/if}<form onsubmit={e=>{e.preventDefault();void login()}}><label>用户名<input aria-label="用户名" bind:value={username} autocomplete="username" required/></label><label>密码<input aria-label="密码" type="password" bind:value={password} autocomplete="current-password" required/></label><button class="primary full" disabled={busy}>{busy?'正在登录…':'登录 Norns'}</button></form><div class="login-themes">{@render themeControls()}</div><p class="login-note">账号由管理员创建 · 仅成员可访问看板 · <a href="https://github.com/AixPot/Norns" target="_blank" rel="noopener noreferrer">源代码</a></p></section></main>
@@ -497,17 +511,17 @@
  {#if mixedSelection}<p role="status">只能对同一来源看板执行原子批量操作；请取消其他看板的选择，不会拆分提交。</p>{/if}
  {#if selecting}<small>选择框与完成框独立；最多 100 个，仅选择当前已加载可见任务。</small>{/if}</div>{/if}
 {#if view==='users'}<Users onerror={fail}/>
-{:else if view==='smart'}{#if smartRoute==='inbox'}<div class="inbox-history-control"><button onclick={()=>inboxArchive?routeTo('inbox'):showInboxArchive()}>{inboxArchive?'返回收集箱':'已归档'}</button></div>{/if}{#if inboxArchive&&inboxHistory}<section class="inbox-history"><h1>收集箱 · 已归档</h1><p class="muted">仅你可见。打开后可恢复，也可确认整链转入普通看板。</p>{#each inboxHistory.cards.filter(c=>c.archived) as c}<button class="archived-card" onclick={async e=>{const element=e.currentTarget;if(!await leaveDraft())return;board=inboxHistory;writer=null;await edit(c,element)}}>{c.title}<span>打开 →</span></button>{:else}<p class="empty-note">还没有归档的任务。</p>{/each}</section>{:else}{#key `${user.id}:${smartRoute}`}<SmartTasks {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} ontemplate={(restore)=>useTemplate(inbox?.id||0,inboxList,restore)} accountId={user.id} display={displayValue('smart',smartRoute)} ondisplay={((uid,scope)=>(value:ViewPreferences)=>displayChange(uid,'smart',scope,value))(user.id,smartRoute)} bind:this={smartRef} {recovery} unknown={!!uncertainScope} inboxList={inboxList} route={smartRoute} inboxId={inbox?.id||0} refresh={taskRefresh} {pendingCards} onopen={openTask} oncomplete={completeTask} onquick={quickInbox} onmetadata={metadata} onerror={fail}/>{/key}{/if}
+{:else if view==='smart'}{#if smartRoute==='inbox'}<div class="inbox-history-control"><button onclick={()=>inboxArchive?routeTo('inbox'):showInboxArchive()}>{inboxArchive?'返回收集箱':'已归档'}</button></div>{/if}{#if inboxArchive&&inboxHistory}<section class="inbox-history"><h1>收集箱 · 已归档</h1><p class="muted">仅你可见。打开后可恢复，也可确认整链转入普通看板。</p>{#each inboxHistory.cards.filter(c=>c.archived) as c}<button class="archived-card" onclick={async e=>{const element=e.currentTarget;if(!await leaveDraft())return;board=inboxHistory;writer=null;await edit(c,element)}}>{c.title}<span>打开 →</span></button>{:else}<p class="empty-note">还没有归档的任务。</p>{/each}</section>{:else}{#key `${user.id}:${smartRoute}`}<SmartTasks {completionMotion} {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} ontemplate={(restore)=>useTemplate(inbox?.id||0,inboxList,restore)} accountId={user.id} display={displayValue('smart',smartRoute)} ondisplay={((uid,scope)=>(value:ViewPreferences)=>displayChange(uid,'smart',scope,value))(user.id,smartRoute)} bind:this={smartRef} {recovery} unknown={!!uncertainScope} inboxList={inboxList} route={smartRoute} inboxId={inbox?.id||0} refresh={taskRefresh} {pendingCards} onopen={openTask} oncomplete={completeTask} onquick={quickInbox} onmetadata={metadata} onerror={fail}/>{/key}{/if}
 {:else if view==='calendar'}<CalendarView bind:date={calendarDate} bind:mode={calendarMode} bind:boardId={calendarBoard} {boards} onmetadata={metadata} onopen={openTask} onerror={fail} onfilter={taskFilter} refresh={taskRefresh}/>
-{:else if view==='tasks'}<TaskDiscovery {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} accountId={user.id} display={displayValue('search','all')} ondisplay={((uid)=>(value:ViewPreferences)=>displayChange(uid,'search','all',value))(user.id)} bind:filters={taskFilters} {boards} onmetadata={metadata} onopen={openTask} onerror={fail} onfilter={taskFilter} refresh={taskRefresh}/>
+{:else if view==='tasks'}<TaskDiscovery {completionMotion} {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} accountId={user.id} display={displayValue('search','all')} ondisplay={((uid)=>(value:ViewPreferences)=>displayChange(uid,'search','all',value))(user.id)} bind:filters={taskFilters} {boards} onmetadata={metadata} onopen={openTask} onerror={fail} onfilter={taskFilter} refresh={taskRefresh}/>
 {:else if !board}<section><h1>选择清单</h1><p class="muted">从左侧选择看板，或添加一个新的清单。</p></section>
 {:else}<div class="board-heading"><div><button class="back" onclick={()=>routeTo('today')}>← 今天</button><h1>{board.title}</h1></div><div class="board-controls">{#if busy||notice}<span class="save-status" role="status">{busy?'保存中…':notice}</span>{/if}<button class="secondary" disabled={busy} onclick={()=>navigate(ready=>openBoard(board!.id,ready))}>刷新看板</button><button class="secondary" onclick={()=>membersOpen=!membersOpen}>成员 ({board.members.length})</button></div></div>
 {#if membersOpen}<section class="members"><h2>看板成员</h2>{#each board.members as member}<div class="member-row"><div><strong>{member.username}</strong><span class="muted">{member.role==='admin'?'看板管理员':'成员'}{!member.active?' · 已停用':''}</span></div>{#if board.role==='admin'&&member.user_id!==user.id}<button disabled={busy} onclick={()=>boardAction({action:'member_remove',user_id:member.user_id})}>移除</button>{/if}</div>{/each}{#if board.role==='admin'}<form onsubmit={async e=>{e.preventDefault();if(await boardAction({action:'member_set',username:memberName,role:memberRole}))memberName=''}}><label>成员用户名<input aria-label="成员用户名" bind:value={memberName} required/></label><label>角色<select aria-label="成员角色" bind:value={memberRole}><option value="member">成员</option><option value="admin">看板管理员</option></select></label><button class="primary" disabled={busy}>添加或提权</button></form><p class="muted">不支持管理员降级或自行退出。至少保留一位看板管理员。</p>{/if}</section>{/if}
-<BoardView {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} ontemplate={(listId,restore)=>useTemplate(board!.id,listId,restore)} accountId={user.id} display={boardDisplay} ondisplay={((uid,id)=>(value:ViewPreferences)=>displayChange(uid,'board',String(id),value))(user.id,board.id)} bind:this={boardRef} {recovery} unknown={!!uncertainScope} {board} {busy} moveOwner={`${user.id}:${requestEpoch}`} dragDisabled={!!draft} {pendingCards} onedit={edit} onaction={boardAction} onmove={boardMove}/>
+<BoardView {completionMotion} {selecting} {selected} onselect={selectTask} onvisible={selectionVisible} ontemplate={(listId,restore)=>useTemplate(board!.id,listId,restore)} accountId={user.id} display={boardDisplay} ondisplay={((uid,id)=>(value:ViewPreferences)=>displayChange(uid,'board',String(id),value))(user.id,board.id)} bind:this={boardRef} {recovery} unknown={!!uncertainScope} {board} {busy} moveOwner={`${user.id}:${requestEpoch}`} dragDisabled={!!draft} {pendingCards} onedit={edit} onaction={boardAction} onmove={boardMove}/>
 {/if}
 </main></div>
 {/if}
-{#if draft&&board}{#key `${board.id}:${draft.id}`}<CardDetail positionDisabled={view==='boards'&&boardDisplay.sort!=='manual'} suspended={bulkOpen||exportOpen||templateOpen} onsavetemplate={saveTemplate} onuncertain={()=>{if(board){uncertainScope=board.id;detailEdited()}}} {detailRecovery} {recoveryHold} {recoveryReview} {recoveryMessage} onrestore={restoreDetail} ondiscard={discardDetail} onconfirmsave={confirmRecoverySave} onauxiliary={auxiliary} ontransfer={startTransfer} feedback={completionFeedback} bind:this={detailRef} {draft} {board} {busy} {anchor} {saveState} {saveError} {review} userId={user!.id} onaction={detailAction} onclose={()=>{void closeDetail()}} onchange={changed} onblur={async()=>recoveryHold?false:await autosave?.flush()??false} oncomposition={composition} onretry={retrySave} onreview={reviewConflict} onrebase={confirmRebase} oncancelreview={()=>review=null}/>{/key}{/if}
+{#if draft&&board}{#key `${board.id}:${draft.id}`}<CardDetail completionPhase={completionMotion.find(e=>e.id===draft?.id)?.phase||''} positionDisabled={view==='boards'&&boardDisplay.sort!=='manual'} suspended={bulkOpen||exportOpen||templateOpen} onsavetemplate={saveTemplate} onuncertain={()=>{if(board){uncertainScope=board.id;detailEdited()}}} {detailRecovery} {recoveryHold} {recoveryReview} {recoveryMessage} onrestore={restoreDetail} ondiscard={discardDetail} onconfirmsave={confirmRecoverySave} onauxiliary={auxiliary} ontransfer={startTransfer} feedback={completionFeedback} bind:this={detailRef} {draft} {board} {busy} {anchor} {saveState} {saveError} {review} userId={user!.id} onaction={detailAction} onclose={()=>{void closeDetail()}} onchange={changed} onblur={async()=>recoveryHold?false:await autosave?.flush()??false} oncomposition={composition} onretry={retrySave} onreview={reviewConflict} onrebase={confirmRebase} oncancelreview={()=>review=null}/>{/key}{/if}
 
 {#snippet completionFeedback()}{#if completion}<CompletionToast item={completion} onundo={()=>{void undoCompletion()}} onclose={()=>feedback.clear()}/>{/if}{/snippet}
 {#if !draft}{@render completionFeedback()}{/if}
@@ -522,7 +536,7 @@
 {/snippet}
 {#snippet navigation()}
  <div class="nav-brand"><Wordmark/></div><nav class="smart-navigation" aria-label="智能视图">{#each [['today','今天'],['tomorrow','明天'],['next7','最近七天'],['mine','指派给我'],['inbox','收集箱']] as [route,label]}<button class:active={view==='smart'&&smartRoute===route} onclick={()=>routeTo(route)}><span>{label}</span></button>{/each}</nav>
- <div class="lists-heading"><span>清单</span><div class="global-actions"><button aria-label="更多操作" aria-expanded={moreOpen} onclick={()=>moreOpen=!moreOpen}>⋯</button>{#if moreOpen}<div class="global-menu"><button onclick={()=>{if(!overlayReady()||draft&&!detailRef?.overlayReady())return;moreOpen=false;drawer=false;exportOpen=true}}>导出数据</button><button onclick={showTemplates}>私人模板库</button></div>{/if}</div><button aria-label="添加清单" title="添加清单" onclick={()=>navigate(()=>{creatingBoard=!creatingBoard})}>＋</button></div>
+ <div class="lists-heading"><span>清单</span><div class="global-actions"><button aria-label="更多操作" aria-expanded={moreOpen} onclick={()=>moreOpen=!moreOpen}>⋯</button>{#if moreOpen}<div class="global-menu"><button onclick={()=>{if(!overlayReady()||draft&&!detailRef?.overlayReady())return;moreOpen=false;drawer=false;exportOpen=true}}>导出数据</button><button onclick={showTemplates}>私人模板库</button><PwaInstall/></div>{/if}</div><button aria-label="添加清单" title="添加清单" onclick={()=>navigate(()=>{creatingBoard=!creatingBoard})}>＋</button></div>
  {#if creatingBoard}<form class="sidebar-create" onsubmit={e=>{e.preventDefault();void navigate(createBoard)}}><label>看板名称<input aria-label="看板名称" placeholder="清单名称" bind:value={boardTitle} required maxlength="100"/></label><button class="primary" disabled={busy}>创建看板</button></form>{/if}
  <nav class="board-navigation" aria-label="清单">{#each boards as b}<button class:active={view==='boards'&&board?.id===b.id} onclick={()=>navigate(ready=>openBoard(b.id,ready))}><span class="board-symbol" aria-hidden="true">▤</span><span>{b.title}</span></button>{:else}<p class="muted">暂无看板，可添加或请管理员邀请。</p>{/each}</nav>
 {/snippet}

@@ -132,3 +132,35 @@ node frontend/test-browser/three-pane.mjs
 `node frontend/test-browser/bulk-actions.mjs` 验证选择与完成独立、同板可见原任务上限、预览确认、原子独立字段修改、真实 CAS 冲突全不写、重复后继安全、提交后响应丢失不重放、账号切换、详情焦点恢复和 320/375 弹窗／底部按钮可达。它同时检查未提交表单和隐藏日期缓冲的刷新警告、恢复默认后不再警告、脏表单 Escape 放弃确认及取消后保留精确输入；不承诺刷新后恢复批量表单。
 
 这两项均使用上述已安装模块、当前 `NORNS_BINARY`、固定 `frontend/dist` 和独立 `EVIDENCE_ROOT`，只写合成数据库，不自动安装依赖。与模板、导出和既有日程回归串行运行。
+
+## 复制摘要与窄宽显示偏好
+
+`node frontend/test-browser/convenience.mjs` 使用上述 `NORNS_BINARY`、`PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 和独立 `EVIDENCE_ROOT`，复用已安装的 Chromium，不安装依赖。它自建并清理 loopback 48881 服务，只写随机合成账号及独立 SQLite。与 `organization-view.mjs` 串行运行。
+
+覆盖 v1 偏好在两种宽度下的兼容初值、分别修改／刷新／账号隔离、localStorage 禁用时的页面内回退、宽窄切换保留快速记录和详情 DOM／未保存输入；通过真实剪贴板读回验证已保存摘要，注入拒绝和不可用路径验证可操作反馈，延迟剪贴板完成后切换任务验证回调归属。无效日期与未发送评论保持，复制与显示操作的合成数据库快照和请求计数不变。每次运行记录完整 dist 清单、二进制／进程哈希、数据库和静态目录；截图留在证据目录。代表性 Chromium 1440／375 不等于物理设备或 Safari 验收。
+
+纯函数格式／白名单／剪贴板结果测试在 `frontend/tests/task-summary.test.mjs`；双宽度存储与兼容性在 `frontend/tests/view-preferences.test.mjs`。正常自动保存与显示焦点边界继续由 `organization-view.mjs` 验证。
+
+## 轻量完成动效
+
+`node frontend/test-browser/completion-motion.mjs` 使用同一组明确环境变量、自建随机合成账号／SQLite 和 loopback 48891 服务；记录完整 dist、二进制及运行进程哈希，在 finally 关闭浏览器和服务。禁止传入生产数据库，运行期间不重建 dist。
+
+它延迟真实已提交响应，验证立即灰色勾选与「保存中」、未确认无撤销、相邻任务仍可连续入队、真实写入不因动效推迟；释放响应后采样逐帧 DOM/geometry 和运行中的 Web Animations，证明 1440／375 下邻项位置插值，不只检查 CSS。另覆盖最新项撤销、真实 CAS 409、受控权限拒绝、今天／私人收集箱、搜索既有详情入口、轮询期间去重与保留 pending、详情 DOM 和减少动态效果。`completed-bottom-undo.mjs` 沿用重复后继安全、10 秒、队列、导航及手机详情回归；与 convenience、organization-view 和 poll-revision 在同一冻结构建串行执行。
+
+完成 UI 分为 pending、服务器确认后的短暂 settling、既有 completed 分组；这不是离线成功或后端状态。纯函数回归在 `frontend/tests/completion-motion.test.mjs`。PWA 验证另见下节；没有离线编辑、推送或部署。
+
+## 轻量联网 PWA
+
+完成上述前端 test/check/build 后，固定同一 `NORNS_BINARY` 与 `frontend/dist`，运行：
+
+```sh
+node frontend/test-browser/pwa.mjs
+```
+
+使用已有 `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH`、`EVIDENCE_ROOT`、`NORNS_BINARY`，不安装依赖。runner 独占 loopback 48901，在新建的证据目录中复制静态构建、建立独立 SQLite／Chromium profile，finally 关闭服务与浏览器；不连接生产。静态副本中的 v2 探针只改变 worker 缓存版本，不修改冻结 dist。
+
+覆盖 manifest／图标 MIME 和 CSP、Chromium installability、maskable 不透明安全区、已打开页面断网保留脏输入与 IME、API／评论／附件／导出请求不兜底、不自动重放、冷启动公共 503 与 CacheStorage 仅有 offline.html。两个真实页面保持旧 controller、输入 DOM 和弹窗，waiting 通知不触发刷新；观察实际 waiting 版本的自然 activated 事件，再明确重开并断言旧公共缓存已清除，不通过固定 sleep 或强制激活规避生命周期。
+
+Chromium 的 `display-mode` CDP 媒体覆盖可能不生效，不能据此声称独立窗口通过。runner 另在隔离 profile 使用 CDP `PWA.install`／`PWA.launch` 真正安装启动，断言 `matchMedia('(display-mode: standalone)')` 为 true、安装引导隐藏，并测量 375px 安全区 body top 24px、header 不重复 top inset、无横向溢出；结束时卸载该合成安装。此测试要求支持 PWA CDP 的现代 Chromium。物理 iPhone／Safari、Android 安装 UI 与系统主屏图标仍需实机验收，不能从截图或 headless Chromium 推断。
+
+每次保留二进制／进程 SHA-256、完整 dist 清单、安装信息、生命周期、缓存清单与截图。截图需查看；离线说明不是任务缓存。部署时保留旧 hash 静态资源供已打开窗口使用；本项测试不执行部署。

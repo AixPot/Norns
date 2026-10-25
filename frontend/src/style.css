@@ -64,3 +64,7 @@
 
 /* Only smart home views share the centered task column; board/search toolbars stay full width. */
 .workspace:has(>.smart-tasks)>.selection-toolbar{width:100%;max-width:800px;margin-left:auto;margin-right:auto}
+
+/* Keep the viewport content inside display cutouts without changing theme tokens. */
+body{padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left)}
+@media(display-mode:standalone){html{min-height:100dvh}}

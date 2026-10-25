@@ -60,3 +60,21 @@ test('unavailable browser storage getter safely falls back to account-local memo
   assert.deepEqual(createViewPreferences({accountId:8}).get(scope),defaults);
  }finally{if(descriptor)Object.defineProperty(globalThis,'localStorage',descriptor);else delete globalThis.localStorage}
 });
+
+test('wide and narrow preferences independently inherit v1 until explicitly changed',async()=>{
+ const {createViewPreferences}=await import('../src/view-preferences.mjs');
+ const s=storage(),legacy='norns.view-preferences.v1.account.1.smart.today';
+ s.values.set(legacy,JSON.stringify({version:1,group:'board',sort:'date'}));
+ const p=createViewPreferences({accountId:1,storage:s});
+ assert.deepEqual(p.get(scope,'wide'),{group:'board',sort:'date'});
+ assert.deepEqual(p.get(scope,'narrow'),{group:'board',sort:'date'});
+ p.set(scope,{group:'none',sort:'manual'},'narrow');
+ assert.deepEqual(p.get(scope,'wide'),{group:'board',sort:'date'});
+ const reload=createViewPreferences({accountId:1,storage:s});
+ assert.deepEqual(reload.get(scope,'narrow'),{group:'none',sort:'manual'});
+ assert.deepEqual(reload.get(scope,'wide'),{group:'board',sort:'date'});
+ assert.deepEqual(createViewPreferences({accountId:2,storage:s}).get(scope,'narrow'),defaults);
+ assert.equal(s.values.get(legacy),JSON.stringify({version:1,group:'board',sort:'date'}));
+ assert.deepEqual(JSON.parse(s.values.get('norns.view-preferences.v2.account.1.smart.today.narrow')),{version:2,group:'none',sort:'manual'});
+ const denied=createViewPreferences({accountId:1,storage:null});denied.set(scope,{group:'date',sort:'date'},'narrow');assert.deepEqual(denied.get(scope,'wide'),defaults);
+});

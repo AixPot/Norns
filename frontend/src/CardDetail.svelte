@@ -1,14 +1,15 @@
 <script lang="ts">
  import type {Snippet} from 'svelte';
  import {cardSlots,slotKey} from './drag-order.mjs';
- import {onMount,untrack,tick} from 'svelte';
+ import {copyTaskSummary} from './task-summary.mjs';
+ import {onMount,onDestroy,untrack,tick} from 'svelte';
  import './task-panel.css';
  import ScheduleEditor from './ScheduleEditor.svelte';
  import Attachments from './Attachments.svelte';
  import {positionPanel} from './panel-position.mjs';
  import type {Board,Draft,Card} from './types';
- type Props={positionDisabled?:boolean;suspended?:boolean;detailRecovery?:any;recoveryHold?:boolean;recoveryReview?:boolean;recoveryMessage?:string;onrestore:()=>void;ondiscard:()=>void;onconfirmsave:()=>void;onauxiliary:(value:any)=>void;onuncertain:()=>void;onsavetemplate?:()=>Promise<void>;ontransfer?:()=>Promise<void>;feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
- let {positionDisabled=false,suspended=false,detailRecovery,recoveryHold=false,recoveryReview=false,recoveryMessage='',onrestore,ondiscard,onconfirmsave,onauxiliary,onuncertain,ontransfer,onsavetemplate,feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
+ type Props={completionPhase?:string;positionDisabled?:boolean;suspended?:boolean;detailRecovery?:any;recoveryHold?:boolean;recoveryReview?:boolean;recoveryMessage?:string;onrestore:()=>void;ondiscard:()=>void;onconfirmsave:()=>void;onauxiliary:(value:any)=>void;onuncertain:()=>void;onsavetemplate?:()=>Promise<void>;ontransfer?:()=>Promise<void>;feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
+ let {completionPhase='',positionDisabled=false,suspended=false,detailRecovery,recoveryHold=false,recoveryReview=false,recoveryMessage='',onrestore,ondiscard,onconfirmsave,onauxiliary,onuncertain,ontransfer,onsavetemplate,feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
  let panel:HTMLDivElement,body:HTMLDivElement;let auxiliaryComposition=$state(false);let lastEditor:HTMLElement|undefined;
  let returnSelection:{node:HTMLInputElement|HTMLTextAreaElement;start:number|null;end:number|null;direction:string|null}|undefined;
  export function snapshotFocus(){const node=lastEditor as HTMLInputElement|HTMLTextAreaElement;if(node?.matches('input,textarea'))returnSelection={node,start:node.selectionStart,end:node.selectionEnd,direction:node.selectionDirection};return resumeFocus}
@@ -17,6 +18,18 @@
 
  $effect(()=>{if(suspended)untrack(snapshotFocus);if(!suspended)untrack(layout)});let titleInput=$state<HTMLInputElement>(),descriptionInput=$state<HTMLTextAreaElement>();
  let editor=$state(''),more=$state(false),localError=$state(''),composing=$state(false);
+ let copyPending=$state(false),copyMessage=$state('');let copyGeneration=0,disposed=false;
+ onDestroy(()=>{disposed=true;copyGeneration++});
+ async function copySummary(){
+  if(copyPending)return;
+  const generation=++copyGeneration,uid=userId,boardId=board.id,cardId=draft.id;
+  const owns=()=>!disposed&&generation===copyGeneration&&uid===userId&&boardId===board.id&&cardId===draft.id;
+  copyPending=true;copyMessage='';localError='';
+  try{if(await copyTaskSummary(board,cardId,{isCurrent:owns})){copyMessage='已复制已保存摘要（不含未保存输入）';more=false}}
+  catch(e){if(owns())localError=e instanceof Error?e.message:'复制失败，请重试'}
+  finally{if(owns())copyPending=false}
+ }
+
  let position=$state({left:12,top:12}),viewport=$state({height:0,top:0,mobile:false});
  let target=$state(untrack(()=>draft.list_id)),index=$state(''),newItem=$state(''),comment=$state(''),renaming=$state(0),itemTitle=$state('');
  let renameGeneration=0,newItemGeneration=0,commentGeneration=0;
@@ -61,7 +74,7 @@
   return()=>{const shell=document.querySelector<HTMLElement>('.app-shell');if(shell&&!suspended)shell.inert=false;observer.disconnect();document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard);window.removeEventListener('resize',layout);window.removeEventListener('scroll',layout,true);window.visualViewport?.removeEventListener('resize',layout);window.visualViewport?.removeEventListener('scroll',layout);if(!suspended&&anchor?.isConnected)(anchor.matches('button')?anchor:anchor.querySelector<HTMLElement>('button'))?.focus({preventScroll:true})};
  });
  async function openEditor(id:string){if(editor==='schedule'&&!recoveryHold&&!await onblur())return;editor=editor===id?'':id;more=false;await tick();if(id==='description'){titleInput?.focus()}else body.querySelector<HTMLElement>(`[data-editor="${id}"] input,[data-editor="${id}"] textarea,[data-editor="${id}"] select`)?.focus();}
- function editorBlur(event?:FocusEvent){if((event?.relatedTarget as Element|null)?.closest('.view-options'))return;return onblur()}
+ function editorBlur(event?:FocusEvent){if((event?.relatedTarget as Element|null)?.closest('.view-options,.task-more'))return;return onblur()}
  function composition(active:boolean){composing=active;oncomposition(active)}
  export function transferReady(){if(composing||auxiliaryComposition||hasPending()){localError='请先完成输入，并发送或清空未发送的评论、清单和附件队列，再转移。';return false}return true}
  export function hasPending(){return !!newItem||!!comment||!!itemTitle||!!renaming||actionPending||!!attachments?.hasPending()}
@@ -85,24 +98,25 @@
 </script>
 {#snippet glyph(path:string)}<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={path}/></svg>{/snippet}
 {#if viewport.mobile}<div class="sheet-backdrop" aria-hidden="true"></div>{/if}
-<div bind:this={panel} inert={suspended} onfocusin={e=>{if((e.target as HTMLElement).matches('input,textarea,select'))lastEditor=e.target as HTMLElement}} class="task-panel" role="dialog" aria-modal={viewport.mobile?'true':undefined} aria-labelledby="card-heading" oncompositionstart={e=>{if(!(e.target as Element).matches(".content-title,.content-description"))auxiliaryComposition=true}} oncompositionend={()=>auxiliaryComposition=false} tabindex="-1" style:left={viewport.mobile?'8px':`${position.left}px`} style:top={viewport.mobile?`${viewport.top+12}px`:`${position.top}px`} style:max-height={viewport.mobile?`${viewport.height-20}px`:'calc(100dvh - 24px)'}>
+<div bind:this={panel} inert={suspended} onfocusin={e=>{if((e.target as HTMLElement).matches('input,textarea,select'))lastEditor=e.target as HTMLElement}} class="task-panel" role="dialog" aria-modal={viewport.mobile?'true':undefined} aria-labelledby="card-heading" oncompositionstart={e=>{if(!(e.target as Element).matches(".content-title,.content-description"))auxiliaryComposition=true}} oncompositionend={()=>auxiliaryComposition=false} tabindex="-1" style:left={viewport.mobile?'8px':`${position.left}px`} style:top={viewport.mobile?`max(${viewport.top+12}px, env(safe-area-inset-top))`:`${position.top}px`} style:max-height={viewport.mobile?`calc(${viewport.height}px - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))`:'calc(100dvh - 24px)'}>
  <div class="task-panel-top">
   <header class="task-panel-head"><span class="eyebrow">卡片 #{draft.id}</span><span class="task-save" role="status" aria-live="polite">{recoveryHold?'已恢复 · 未保存':newItem||comment||itemTitle||renaming?'有未发送输入':saveState==='saving'?'保存中…':saveState==='pending'?'待保存':saveState==='error'||saveState==='conflict'||saveState==='invalid'?'未保存':'已保存'}</span><button class="tool-button" aria-label="关闭卡片" title="关闭卡片 (Esc)" onclick={onclose}>{@render glyph('m6 6 12 12M6 18 18 6')}</button></header>
   <div class="task-toolbar" role="toolbar" aria-label="卡片顶部操作">
-   <button class="completion-button" disabled={actionPending||composing||draft.archived} onclick={()=>action({action:'card_complete',completed:!draft.completed})}>{draft.completed?'撤销完成':'完成任务'}</button>
+   <button class="completion-button" aria-label={completionPhase==='pending'?'正在保存完成状态…':draft.completed?'撤销完成':'完成任务'} data-completion-phase={completionPhase} aria-busy={completionPhase==='pending'} disabled={actionPending||composing||draft.archived} onclick={()=>action({action:'card_complete',completed:!draft.completed})}>{completionPhase==='pending'?'正在保存完成状态…':draft.completed?'撤销完成':'完成任务'}</button>
    <button class="text-button" aria-label="设置日期和重复" onclick={()=>openEditor('schedule')}>日期{draft.due_date?` · ${draft.due_date}`:''}</button>
    {#each tools.filter(t=>['checklist','attachment'].includes(t.id)) as tool}<button class="tool-button" class:active={editor===tool.id} aria-label={tool.label} aria-expanded={editor===tool.id} aria-controls={`editor-${tool.id}`} data-tooltip={tool.label} title={tool.label} onclick={()=>openEditor(tool.id)}>{@render glyph(tool.path)}</button>{/each}
-   <div class="task-more"><button class="tool-button" aria-label="更多操作" title="更多操作" data-tooltip="更多操作" aria-expanded={more} onclick={()=>more=!more}>{@render glyph('M5 12h.01M12 12h.01M19 12h.01')}</button>{#if more}<div class="task-more-menu"><button disabled={composing||actionPending||transferPending} onclick={async()=>{await onsavetemplate?.();more=false}}>保存为私人模板</button><button onclick={()=>{draft.archived=!draft.archived;onchange(true);more=false}}>{draft.archived?'恢复卡片':'归档卡片'}</button></div>{/if}</div>
+   <div class="task-more"><button class="tool-button" aria-label="更多操作" title="更多操作" data-tooltip="更多操作" aria-expanded={more} onclick={()=>more=!more}>{@render glyph('M5 12h.01M12 12h.01M19 12h.01')}</button>{#if more}<div class="task-more-menu"><button disabled={copyPending} onclick={copySummary}>{copyPending?'复制中…':'复制已保存摘要'}</button><p class="muted">仅复制已保存的标题、描述、日期、状态、来源、负责人和清单；不保存当前输入，不含评论和附件。</p><button disabled={composing||actionPending||transferPending} onclick={async()=>{await onsavetemplate?.();more=false}}>保存为私人模板</button><button onclick={()=>{draft.archived=!draft.archived;onchange(true);more=false}}>{draft.archived?'恢复卡片':'归档卡片'}</button></div>{/if}</div>
   </div>
   {#if saveState==='error'||saveState==='conflict'}<div class="task-alert" role="alert"><strong>{saveState==='conflict'?'版本冲突，输入已保留。':'保存失败，输入已保留。'}</strong><p>{saveError}</p>{#if saveState==='conflict'}<button onclick={onreview}>查看最新版本并处理</button>{:else}<button onclick={onretry}>重试保存</button><button onclick={onreview}>查看最新版本并核对</button>{/if}</div>{/if}
   {#if detailRecovery&&!recoveryHold}<section class="draft-recovery" role="status"><span>{recoveryReview?'服务器内容已变化，请核对最新标题：'+detailRecovery.fresh.cards.find((c:Card)=>c.id===draft.id)?.title:'有此标签页保留的草稿'}</span>{#if recoveryReview}{@const latest=detailRecovery.fresh.cards.find((c:Card)=>c.id===draft.id)}<div class="recovery-baseline"><p>{latest.description||'无描述'}</p><p>日期与重复：{latest.schedule?JSON.stringify(latest.schedule):'无'} · 负责人：{latest.assignee_id??'无'} · {latest.archived?'已归档':'未归档'}</p><p>恢复后仍需单独确认保存；评论和清单不会自动发送。</p></div>{/if}<button onclick={onrestore}>{recoveryReview?'已核对，恢复到编辑器':'恢复草稿'}</button><button onclick={ondiscard}>丢弃草稿</button></section>{/if}
   {#if recoveryHold}<section class="draft-recovery" role="status"><span>{detailRecovery?.record.unknownCreateOutcome?'核对后再操作；未知结果不会重放':'恢复仅填入编辑器，尚未写入服务器'}</span><button onclick={onconfirmsave} disabled={detailRecovery?.record.unknownCreateOutcome}>确认保存恢复的修改</button><button onclick={ondiscard}>丢弃恢复的修改</button></section>{/if}
   {#if recoveryMessage}<p class="capture-message" role="status">{recoveryMessage}</p>{/if}
+  {#if copyMessage}<p class="capture-message" role="status">{copyMessage}</p>{/if}
   {#if localError}<div class="task-alert" role="alert">{localError}<button onclick={()=>localError=''}>知道了</button></div>{/if}
  </div>
  <div class="task-panel-body" bind:this={body}>
   {#if review}<section class="conflict-review"><h3>最新版本 · {review.revision}</h3>{#if remote}<p><strong>{remote.title}</strong></p><p class="task-description">{remote.description||'无描述'}</p><p>负责人：{board.members.find(m=>m.user_id===remote.assignee_id)?.username||'未分配'} · 截止：{remote.due_date||'无'} · {remote.archived?'已归档':'未归档'}</p><p class="muted">继续会将本地修改的字段写入此版本；未修改字段不会被覆盖。评论和清单请检查下方最新内容。</p><button onclick={onrebase}>保留我的修改并重试</button>{:else}<p>卡片已不存在，请复制本地输入后返回。</p>{/if}<button onclick={oncancelreview}>返回继续编辑</button></section>{/if}
-  <label class="content-title-label"><span class="sr-only">卡片标题</span><input id="card-heading" class="content-title" class:completed={draft.completed} bind:this={titleInput} aria-label="卡片标题" maxlength="500" required bind:value={draft.title} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}/></label>
+  <label class="content-title-label"><span class="sr-only">卡片标题</span><input id="card-heading" class="content-title" class:completed={draft.completed} data-completion-phase={completionPhase} bind:this={titleInput} aria-label="卡片标题" maxlength="500" required bind:value={draft.title} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}/></label>
   {#if draft.archived}<p class="muted">已归档{draft.completed?' · 已完成':''}</p>{/if}
   <textarea class="content-description" bind:this={descriptionInput} aria-label="描述" placeholder="添加描述…" rows="6" maxlength="20000" bind:value={draft.description} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}></textarea>
   {#if editor==='schedule'}<ScheduleEditor value={draft.scheduleInput} completed={draft.completed} onchange={()=>onchange()} onblur={editorBlur}/>{/if}

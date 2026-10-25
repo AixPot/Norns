@@ -6,7 +6,7 @@ let csrf='',generation=0;let unauthorized:(()=>void)|null=null;
 export function onUnauthorized(fn:(()=>void)|null){unauthorized=fn}
 export function setCsrf(token:string){exportSession.abort();exportSession=new AbortController();csrf=token;++generation}
 function request(path:string,method:string,body?:unknown,signal?:AbortSignal){
- return fetch('/api'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method!=='GET'?{'X-CSRF-Token':csrf}:{})},...(signal?{signal:AbortSignal.any([signal,exportSession.signal])}:{}),...(body===undefined?{}:{body:JSON.stringify(body)})});
+ return fetch('/api'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method!=='GET'?{'X-CSRF-Token':csrf}:{})},...(signal?{signal:AbortSignal.any([signal,exportSession.signal])}:{}),...(body===undefined?{}:{body:JSON.stringify(body)})}).then(response=>{window.dispatchEvent(new CustomEvent('norns-connection',{detail:response.status<500}));return response},error=>{if(error?.name!=='AbortError')window.dispatchEvent(new CustomEvent('norns-connection',{detail:false}));throw error});
 }
 export async function api<T>(path:string,method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{
  const token=generation;
