@@ -47,7 +47,7 @@ const scopeKey=s=>`${s.kind}:${s.boardId}:${s.cardId??s.listId}`;
 // they cannot represent both buffers and must not be used by new UI adapters.
 function recordValid(r){
  if(!shape(r,['scope','generation','revision','baseline','fields','unknownCreateOutcome'])||!scopeValid(r.scope)||!integer(r.generation)||!integer(r.revision)||!bool(r.unknownCreateOutcome))return false;
- const validators=r.scope.kind==='capture'?{raw:text(160),acceptedParse:v=>v===null||parsed(v)}:r.scope.kind==='list'?{title:text(100)}:{title:text(500),description:text(20000),comment:text(10000),newItem:text(500),itemTitle:text(500),renaming:integer,checklistTitle:text(500),checklistItemId:v=>v===null||id(v),assignee_id:v=>v===null||id(v),due_date:v=>v===null||v===''||date(v),archived:bool,scheduleInput,scheduleEditor};
+ const validators=r.scope.kind==='capture'?{raw:text(160),acceptedParse:v=>v===null||parsed(v),explicitDate:v=>v===''||date(v)}:r.scope.kind==='list'?{title:text(100)}:{title:text(500),description:text(20000),comment:text(10000),newItem:text(500),itemTitle:text(500),renaming:integer,checklistTitle:text(500),checklistItemId:v=>v===null||id(v),assignee_id:v=>v===null||id(v),due_date:v=>v===null||v===''||date(v),archived:bool,scheduleInput,scheduleEditor};
  if(!fieldsValid(r.fields,validators)||!Object.keys(r.fields).length||!fieldsValid(r.baseline,validators))return false;
  const p=r.fields.acceptedParse;
  return !p||(typeof r.fields.raw==='string'&&p.spans.every(s=>r.fields.raw.slice(s.start,s.end)===s.text)&&p.remainingTitle===(r.fields.raw.slice(0,p.spans[0].start)+r.fields.raw.slice(p.spans[0].end)).trim());

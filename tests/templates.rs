@@ -274,7 +274,7 @@ async fn instantiate_rejects_unknown_fields_without_content_revision_or_identity
     for (key, value) in [
         ("unexpected_typo", json!(true)),
         ("completed", json!(true)),
-        ("schedule", json!({"start_date":"2096-01-01"})),
+        ("schedule_typo", json!({"start_date":"2096-01-01"})),
     ] {
         let mut request = instantiate(&v, &b);
         request[key] = value;
@@ -1152,5 +1152,41 @@ async fn shared_source_membership_revocation_does_not_revoke_detached_template()
     assert_eq!(
         mutate(&app, &b, instantiate(&v, &b), &c, &t).await.0,
         StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn instantiate_accepts_creation_schedule_atomically() {
+    let (_d, _url, app, c, t, b) = fixture().await;
+    let (b, v) = saved(&app, &b, &c, &t).await;
+    let mut request = instantiate(&v, &b);
+    request["schedule"] = json!({"start_date":"2026-10-28","timezone":"Asia/Shanghai"});
+    let (status, after, _) = mutate(&app, &b, request.clone(), &c, &t).await;
+    assert_eq!(status, StatusCode::OK, "{after}");
+    let card = after["cards"].as_array().unwrap().last().unwrap();
+    assert_eq!(card["schedule"]["start_date"], "2026-10-28");
+    assert_eq!(card["due_date"], "2026-10-28");
+    assert_eq!(card["touch_version"], 0);
+    assert_eq!(
+        mutate(&app, &b, request.clone(), &c, &t).await.0,
+        StatusCode::CONFLICT
+    );
+    request["schedule"]["start_date"] = json!("2026-02-30");
+    assert_eq!(
+        mutate(&app, &after, request, &c, &t).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/boards/{}", b["id"]),
+            json!({}),
+            &c,
+            &t
+        )
+        .await
+        .1,
+        after
     );
 }

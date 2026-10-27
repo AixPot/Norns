@@ -1,9 +1,10 @@
 <script lang="ts">
+ import {reserveCompletionClearance} from './completion-clearance.mjs';
  export type CompletionNotice={card:number;board:number;user:number;epoch:number;title:string;pending:boolean;status?:'confirmed'|'unknown'};
  let {item,onundo,onclose}:{item:CompletionNotice;onundo:()=>void;onclose:()=>void}=$props();
  const confirmed=$derived(!item.pending&&item.status!=='unknown');
 </script>
-<section class="completion-toast" class:confirmed aria-label="最近完成的任务">
+<section use:reserveCompletionClearance class="completion-toast" class:confirmed aria-label="最近完成的任务">
  {#if confirmed}<svg class="completion-seal" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="m7 12 3.2 3.2L17 8.5" fill="none" stroke="var(--completion-ink,var(--on-accent,#fff))" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>{/if}
  <span role="status" aria-atomic="true">{item.pending?'正在恢复：':item.status==='unknown'?'恢复结果待核对：':'已完成：'}<strong>{item.title}</strong></span>
  <button disabled={item.pending||item.status==='unknown'} onclick={onundo}>{item.pending?'撤销中…':item.status==='unknown'?'待核对':'撤销'}</button>

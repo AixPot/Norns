@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {completionClearanceOwner} from './completion-clearance.mjs';
  import type {Snippet} from 'svelte';
  import {completionAppearance} from './completion-motion.mjs';
  import {cardSlots,slotKey} from './drag-order.mjs';
@@ -116,7 +117,7 @@
   {#if copyMessage}<p class="capture-message" role="status">{copyMessage}</p>{/if}
   {#if localError}<div class="task-alert" role="alert">{localError}<button onclick={()=>localError=''}>知道了</button></div>{/if}
  </div>
- <div class="task-panel-body" bind:this={body}>
+ <div use:completionClearanceOwner class="task-panel-body" bind:this={body}>
   {#if review}<section class="conflict-review"><h3>最新版本 · {review.revision}</h3>{#if remote}<p><strong>{remote.title}</strong></p><p class="task-description">{remote.description||'无描述'}</p><p>负责人：{board.members.find(m=>m.user_id===remote.assignee_id)?.username||'未分配'} · 截止：{remote.due_date||'无'} · {remote.archived?'已归档':'未归档'}</p><p class="muted">继续会将本地修改的字段写入此版本；未修改字段不会被覆盖。评论和清单请检查下方最新内容。</p><button onclick={onrebase}>保留我的修改并重试</button>{:else}<p>卡片已不存在，请复制本地输入后返回。</p>{/if}<button onclick={oncancelreview}>返回继续编辑</button></section>{/if}
   <label class="content-title-label"><span class="sr-only">卡片标题</span><input id="card-heading" class="content-title" class:completed={draft.completed} data-completion-phase={completionPhase} bind:this={titleInput} aria-label="卡片标题" maxlength="500" required bind:value={draft.title} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}/></label>
   {#if draft.skipped}<p class="muted">已跳过 · 历史任务，不能完成或修改日期</p>{/if}{#if draft.archived}<p class="muted">已归档{draft.completed?' · 已完成':''}</p>{/if}

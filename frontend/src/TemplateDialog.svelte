@@ -1,10 +1,12 @@
 <script lang="ts">
+ import CreationDate from './CreationDate.svelte';
  import {onMount,onDestroy} from 'svelte';
  import {api,ApiError} from './api';
  import {sourceTemplate,templateReplacement,unknownOutcome} from './templates.mjs';
  import type {Board,Draft,TaskTemplate,TemplateSummary} from './types';
- let {source=null,target=null,onapply,onclose,onunknown,onpending,onknown}:{source?:{board:Board;draft:Draft}|null;target?:{board:Board;listId:number}|null;onapply:(t:TaskTemplate,ack:boolean)=>Promise<void>;onclose:()=>void;onunknown:()=>void;onpending:()=>void;onknown:()=>void}=$props();
+ let {source=null,target=null,onapply,onclose,onunknown,onpending,onknown}:{source?:{board:Board;draft:Draft}|null;target?:{board:Board;listId:number;route?:string}|null;onapply:(t:TaskTemplate,ack:boolean,date:string)=>Promise<string|undefined>;onclose:()=>void;onunknown:()=>void;onpending:()=>void;onknown:()=>void}=$props();
  let summaries=$state<TemplateSummary[]>([]),selected=$state<TaskTemplate|null>(null),name=$state(''),message=$state(''),working=$state(false),loading=$state(true),blocked=$state(false),created=$state(false),ack=$state(false),dirty=$state(false);
+ let choice=$state('');
  let panel:HTMLDivElement,alive=true,sequence=0,controller:AbortController|undefined;
  const sourceCard=$derived(source?.board.cards.find(c=>c.id===source.draft.id));
  const sourceItems=$derived(source?.board.checklist.filter(i=>i.card_id===source?.draft.id).sort((a,b)=>a.position-b.position)||[]);
@@ -20,7 +22,7 @@
   if(kind==='update'&&!confirm('保存并替换此私人模板的名称和全部内容？已有任务不会改变。'))return;
   const {token,signal}=begin();working=true;message='';
   try{
-   if(kind==='apply'){if(!selected||!target)return;await onapply(selected,ack);if(current(token)){message='已从模板创建新任务；模板本身未改变。';blocked=true}}
+   if(kind==='apply'){if(!selected||!target)return;const notice=await onapply(selected,ack,choice);if(current(token)){message=notice||'已从模板创建新任务；模板本身未改变。';blocked=true}}
    else if(kind==='create'){if(!source||created)return;onpending();await api<TaskTemplate>('/templates','POST',sourceTemplate(source.board,source.draft,name),signal);if(current(token)){onknown();created=true;message='私人模板已保存。';summaries=await api<TemplateSummary[]>('/templates','GET',undefined,signal)}}
    else if(selected){if(kind==='update'){const t=await api<TaskTemplate>(`/templates/${selected.id}`,'PATCH',templateReplacement(selected),signal);if(current(token)){selected=t;dirty=false;message='模板已保存，已有任务未改变。'}}else{await api(`/templates/${selected.id}`,'DELETE',{expected_revision:selected.revision},signal);if(current(token)){selected=null;dirty=false;message='模板已删除，已有任务未改变。'}}if(current(token)){const rows=await api<TemplateSummary[]>('/templates','GET',undefined,signal);if(current(token))summaries=rows}}
   }catch(e){if(current(token)){if(kind==='create'&&!unknownOutcome(e))onknown();if(kind==='create'&&unknownOutcome(e))created=true;error(e,true)}}finally{if(current(token))working=false}
@@ -50,7 +52,7 @@
  {#if selected}
  {#if target}<section aria-label="模板内容预览"><h3>{selected.title}</h3><p class="template-body">{selected.description||'无描述'}</p><ol>{#each selected.checklist as item}<li>{item.title}</li>{/each}</ol><p>模板版本 {selected.revision} · 新任务和条目使用新 ID，全部未完成。</p></section>
  {#if !target.board.inbox_owner_id}<label class="template-ack"><input type="checkbox" aria-label="确认共享模板内容" bind:checked={ack} disabled={working}/>我确认将以上私人内容复制到此普通看板，允许当前及未来成员查看。</label>{/if}
- <button class="primary" disabled={working||loading||blocked||(!target.board.inbox_owner_id&&!ack)} onclick={()=>write('apply')}>确认从模板创建</button>
+ <CreationDate route={target.route} bind:value={choice}/><button class="primary" disabled={working||loading||blocked||(!target.board.inbox_owner_id&&!ack)} onclick={()=>write('apply')}>确认从模板创建</button>
  {:else}
  <fieldset disabled={working||loading}><legend>编辑私人副本 · v{selected.revision}</legend>
  <label>名称<input aria-label="编辑模板名称" bind:value={selected.name} oninput={()=>dirty=true}/></label><label>任务标题<input aria-label="模板任务标题" bind:value={selected.title} oninput={()=>dirty=true}/></label><label>描述<textarea aria-label="模板描述" bind:value={selected.description} oninput={()=>dirty=true} rows="4"></textarea></label>

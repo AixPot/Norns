@@ -190,6 +190,8 @@ pub struct CardFromTemplate {
     expected_template_revision: i64,
     #[serde(default)]
     ack_shared_content: bool,
+    #[serde(default)]
+    schedule: Option<crate::schedule::Schedule>,
 }
 
 /// Strict newtype keeps legacy flattened mutation actions backwards compatible.
@@ -658,6 +660,7 @@ pub async fn mutate(
             template_id,
             expected_template_revision,
             ack_shared_content,
+            schedule,
         }) => {
             crate::templates::write_auth(&mut tx, &a, &s, &headers).await?;
             require_list(&mut tx, id, list_id).await?;
@@ -678,15 +681,26 @@ pub async fn mutate(
             .bind(list_id)
             .fetch_one(&mut *tx)
             .await?;
+            if let Some(s) = &schedule {
+                s.validate()?;
+            }
+            let series = schedule
+                .as_ref()
+                .filter(|s| s.repeat.is_some())
+                .map(|_| uuid::Uuid::new_v4().to_string());
             let card_id = next_card_id(&mut tx).await?;
             sqlx::query(
-                "INSERT INTO cards(id,list_id,title,description,position) VALUES(?,?,?,?,?)",
+                "INSERT INTO cards(id,list_id,title,description,position,schedule,due_date,series_id,anchor_schedule,occurrence_no) VALUES(?,?,?,?,?,?,?,?,?,1)",
             )
             .bind(card_id)
             .bind(list_id)
             .bind(template.title)
             .bind(template.description)
             .bind(position)
+            .bind(schedule.as_ref().map(sqlx::types::Json))
+            .bind(schedule.as_ref().map(|s| &s.start_date))
+            .bind(series)
+            .bind(schedule.as_ref().map(sqlx::types::Json))
             .execute(&mut *tx)
             .await?;
             for item in template.checklist {

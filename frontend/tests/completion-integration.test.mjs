@@ -13,12 +13,15 @@ try{
  const board={id:1,title:'board',revision:1,lists:[{id:1,title:'list',position:0}],cards:[card],members:[],checklist:[],comments:[]};
  const props={board,busy:false,accountId:1,display:{group:'default',sort:'manual'},ondisplay(){},moveOwner:'1:1',onedit(){},onaction:async()=>true,onmove:async()=>true};
  const html=entry=>render(BoardView,{props:{...props,completionMotion:[entry],pendingCards:entry.phase==='pending'?[1]:[]}}).body;
- await test('real board pending row is unchecked; acknowledged row renders static seal and real text',()=>{
+ await test('real board pending is neutral; acknowledged row is checked without a receipt',()=>{
   const pending=html({id:1,record:card,target:true,phase:'pending',confirmed:false});
   const checkbox=pending.match(/<input[^>]+aria-label="完成 ack owned row"[^>]*>/)?.[0];
   assert.ok(checkbox);assert.doesNotMatch(checkbox,/\schecked(?:\s|=|>)/);
   assert.doesNotMatch(pending,/class="completion-seal"/);
   const confirmed=html({id:1,record:card,target:true,phase:'settling',confirmed:true});
-  assert.match(confirmed,/completion-seal/);assert.match(confirmed,/已完成/);
+  assert.doesNotMatch(confirmed,/completion-seal|completion-status|已完成/);
+  const checked=confirmed.match(/<input[^>]+aria-label="完成 ack owned row"[^>]*>/)?.[0];
+  assert.match(checked,/\schecked(?:\s|=|>)/);assert.match(confirmed,/card-completed/);
+  assert.match(pending,/保存中/);
  });
 }finally{await server.close()}

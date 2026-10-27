@@ -9,7 +9,7 @@ test('immediate pending is separate from acknowledgement; hold only presentation
  assert.equal(completionRows([card,{...card,completed:true}],entries).length,1,'overlapping discovery reads must not duplicate held rows');
  now=600;m.finish(token,true);assert.equal(entries[0].phase,'settling');
  assert.equal(completionRows([{...card,completed:true}],entries)[0].completed,false);
- now=720;[...jobs.values()][0].fn();assert.equal(entries.length,0);
+ now=1500;[...jobs.values()][0].fn();assert.equal(entries[0].phase,'collapsing');[...jobs.values()].at(-1).fn();assert.equal(entries.length,0);
  const second=m.begin(card,true);m.finish(second,false);assert.equal(entries.length,0);
 });
 test('clear cancels timers and rejects stale finishes; reduced motion skips hold; projection does not mutate snapshots',()=>{

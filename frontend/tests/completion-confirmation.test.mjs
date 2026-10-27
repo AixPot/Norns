@@ -7,7 +7,7 @@ test('confirmation has a full post-ack stamp interval, independent for consecuti
  const x=fixture();const a=x.m.begin({id:1,completed:false},true),b=x.m.begin({id:2,completed:false},true);
  assert.equal(a.confirmed,false);assert.equal(x.events.length,0);
  assert.equal(x.m.finish(a,true),true);assert.equal(a.confirmed,true);assert.equal(a.phase,'settling');
- assert.equal(b.phase,'pending');assert.deepEqual(x.events,[a]);assert.equal([...x.jobs.values()][0].ms,360);
+ assert.equal(b.phase,'pending');assert.deepEqual(x.events,[a]);assert.equal([...x.jobs.values()][0].ms,900);
  x.m.finish(a,true);assert.equal(x.events.length,1);assert.equal(x.jobs.size,1);
  x.m.finish(b,true);assert.equal(x.jobs.size,2);
 });
@@ -22,11 +22,11 @@ test('reduced motion emits durable-slot confirmation before releasing row withou
  const x=fixture({reduced:()=>true});const a=x.m.begin({id:1},true);x.m.finish(a,true);
  assert.equal(x.events.length,1);assert.equal(x.events[0].confirmed,true);assert.equal(x.jobs.size,0);assert.equal(x.entries().length,0);
 });
-test('appearance offers real neutral pending text and success-only seal/text for entry renderers',()=>{
+test('appearance keeps neutral pending text but adds no success receipt or row height',()=>{
  assert.equal(typeof motion.completionAppearance,'function');
  const x=fixture(),a=x.m.begin({id:1,completed:false},true);
  assert.deepEqual(motion.completionAppearance(a),{busy:true,checked:false,seal:false,label:'保存中',phase:'pending'});
- x.m.finish(a,true);assert.deepEqual(motion.completionAppearance(a),{busy:false,checked:true,seal:true,label:'已完成',phase:'settling'});
+ x.m.finish(a,true);assert.deepEqual(motion.completionAppearance(a),{busy:false,checked:true,seal:true,label:'',phase:'settling'});
  assert.deepEqual(motion.completionAppearance(null),{busy:false,checked:undefined,seal:false,label:'',phase:''});
  const b=x.m.begin({id:2,completed:true},false);assert.equal(motion.completionAppearance(b).label,'恢复中');assert.equal(motion.completionAppearance(b).seal,false);
 });

@@ -7,9 +7,8 @@
    Integration also binds checked to completionAppearance(entry).checked. */
 [data-completion-phase="pending"] input[type="checkbox"]:checked{appearance:none;width:16px;height:16px;border:1px solid var(--secondary);border-radius:4px;background:var(--surface-muted);opacity:1}
 .completion-button[data-completion-phase="pending"]{background:var(--surface-muted);color:var(--secondary)}
-[data-completion-id][data-completion-phase="settling"]{background-color:color-mix(in srgb,var(--accent) 8%,var(--surface));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent);transition:background-color 180ms ease,box-shadow 180ms ease}
 [data-completion-phase="settling"] input[type="checkbox"]{accent-color:var(--accent)}
-.completion-seal{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--completion-ink,var(--on-accent,#fff));animation:completion-seal-in 180ms ease-out}
+.completion-seal{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:4px;background:var(--accent);color:var(--completion-ink,var(--on-accent,#fff));animation:completion-seal-in 180ms ease-out}
 .completion-seal svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .completion-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:1.4;color:var(--text);font-weight:550}
 .completion-status[data-completion-phase="pending"]{color:var(--secondary);font-weight:400}
@@ -23,5 +22,16 @@
 }
 @media(forced-colors:active){
  .completion-seal{background:CanvasText;color:Canvas}
- [data-completion-id][data-completion-phase="settling"]{outline:1px solid CanvasText;box-shadow:none}
 }
+
+/* B: readable acknowledgement, then row-height collapse. Pending remains neutral. */
+[data-completion-id][data-completion-phase="settling"] strong,
+[data-completion-id][data-completion-phase="collapsing"] strong{text-decoration:line-through;color:var(--secondary)!important;opacity:.72}
+/* Acknowledgement belongs to check/strike, not a new row surface. Keep native
+   focus-visible outlines; override both hover and the legacy completed board fill. */
+.smart-row.task-done,
+.smart-row[data-completion-phase="settling"],
+.smart-row[data-completion-phase="collapsing"],
+.board-scroll .card.card-completed,
+.board-scroll .card[data-completion-phase="settling"],
+.board-scroll .card[data-completion-phase="collapsing"]{background:transparent!important;box-shadow:none;filter:none;transition:none!important}

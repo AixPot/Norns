@@ -9,7 +9,7 @@ const {compile}=require('svelte/compiler');
 const {render}=await import(resolve('svelte/server'));
 const source=await readFile(new URL('../src/CompletionToast.svelte',import.meta.url),'utf8');
 const compiled=compile(source,{generate:'server',filename:'CompletionToast.svelte'});
-const code=compiled.js.code.replace(/(['"])(svelte(?:\/[^'"]*)?)\1/g,(_,q,s)=>JSON.stringify(resolve(s)));
+const code=compiled.js.code.replace("'./completion-clearance.mjs'",JSON.stringify(new URL('../src/completion-clearance.mjs',import.meta.url).href)).replace(/(['"])(svelte(?:\/[^'"]*)?)\1/g,(_,q,s)=>JSON.stringify(resolve(s)));
 const {default:Toast}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const item={card:1,board:1,user:1,epoch:0,title:'今日写作',pending:false};
 const html=(patch={})=>render(Toast,{props:{item:{...item,...patch},onundo(){},onclose(){}}}).body;

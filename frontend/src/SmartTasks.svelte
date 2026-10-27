@@ -12,6 +12,7 @@
  let rows=$state<TaskResult[]>([]),completed=$state<TaskResult[]>([]),expanded=$state(false),loading=$state(true),message=$state(''),today=$state(new Date(Date.now()+8*3600000).toISOString().slice(0,10));
  const labels:Record<string,string>={today:'今天',tomorrow:'明天',next7:'最近七天',mine:'指派给我',inbox:'收集箱'};
  const loader=createTaskLoader({read:async(q:string)=>{const data=await api<TaskDiscoveryResponse>('/tasks?'+q);let done:TaskResult[]=[];if(expanded){const params=new URLSearchParams(q);params.set('status','complete');done=(await api<TaskDiscoveryResponse>('/tasks?'+params)).tasks}return {data,done}},apply:({data,done}:{data:TaskDiscoveryResponse;done:TaskResult[]})=>{rows=data.tasks;completed=done;today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);onmetadata(data);loading=false;message=''},onerror:(e:unknown)=>{rows=[];completed=[];loading=false;message=e instanceof Error?e.message:'查询失败';onerror(e)}});
+ $effect(()=>{if(completionMotion.some(e=>e.confirmed&&e.target))expanded=true});
  const projectionOptions=$derived({route,today,...display});
  const projection=$derived(projectTaskView(completionRows([...rows,...completed],completionMotion),projectionOptions));
  const groups=$derived(projection.groups);
@@ -28,7 +29,7 @@
 </script>
 <section class="smart-tasks" use:completionLayout aria-label={labels[route]}>
  <header class="smart-heading"><h1>{labels[route]}</h1><p class="smart-summary" role="status">{loading?'正在查询…':message||`${rows.filter(t=>!t.skipped&&!t.completed).length} 个未完成任务`}{route==='inbox'?' · 仅你可见':''}</p><ViewOptions value={display} owner={`${accountId}:smart:${route}`} onchange={ondisplay}/></header>
- <TaskCapture {ontemplate} {recovery} {unknown} scope={inboxId&&inboxList?{kind:'capture',boardId:inboxId,listId:inboxList}:null} bind:this={capture} label="添加到收集箱" placeholder="添加到私人收集箱…" onsave={onquick}/>
+ <TaskCapture {route} {ontemplate} {recovery} {unknown} scope={inboxId&&inboxList?{kind:'capture',boardId:inboxId,listId:inboxList}:null} bind:this={capture} label="添加到收集箱" placeholder="添加到私人收集箱…" onsave={onquick}/>
  <div class="smart-results">
  {#each groups as group (group.key)}
   {#if group.label}<section class="task-date-group" data-group={group.key} aria-label={group.label}><h2 class:overdue={group.key==='overdue'}>{group.label}<span>{group.tasks.length}</span></h2>{#each group.tasks as task (task.id)}{@render row(task)}{/each}</section>
@@ -36,8 +37,9 @@
  {/each}
  {#if !rows.length&&!loading&&!message}<p class="empty-note">暂时没有任务。</p>{/if}
  </div>
- <button class="completed-toggle" aria-expanded={expanded} onclick={()=>expanded=!expanded}>{expanded?'收起已完成':'展开已完成'}</button>
- {#if expanded}<p class="completed-note">按任务日期匹配，不代表在这一天完成。</p><div class="smart-completed">{#each projection.completed as task (task.id)}{@render row(task)}{:else}<p class="muted">没有匹配的已完成任务。</p>{/each}</div>{/if}
+ <h2 class="completed-heading"><button class="completed-toggle" aria-expanded={expanded} aria-controls={`completed-${route}`} aria-describedby={`completed-meaning-${route}`} title="按任务日期匹配，不代表在这一天完成。" onclick={()=>expanded=!expanded}><svg class="completed-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg><span>已完成</span></button></h2>
+ <span class="sr-only" id={`completed-meaning-${route}`}>按任务日期匹配，不代表在这一天完成。</span>
+ <div class="smart-completed" id={`completed-${route}`} hidden={!expanded}>{#if expanded}{#each projection.completed as task (task.id)}{@render row(task)}{:else}<p class="muted">没有匹配的已完成任务。</p>{/each}{/if}</div>
 </section>
 {#snippet row(task:TaskResult)}
  {@const date=cardSchedule(task,new Date())}

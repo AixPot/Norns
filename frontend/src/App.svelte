@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {completionClearanceOwner} from './completion-clearance.mjs';
  import SkipDialog from './SkipDialog.svelte';
  import ListDeleteDialog from './ListDeleteDialog.svelte';
  import RecurrenceHistory from './RecurrenceHistory.svelte';
@@ -89,10 +90,11 @@
  import NavigationDrawer from './NavigationDrawer.svelte';
  import TransferDialog from './TransferDialog.svelte';
  import ExportDialog from './ExportDialog.svelte';
+ import {captureContext} from './capture-context.mjs';
  import TemplateDialog from './TemplateDialog.svelte';
  import {sourceTemplate,templateApply,templateUncertainty,unknownOutcome} from './templates.mjs';
  import type {TaskTemplate} from './types';
- let templateOpen=$state(false),templateSource=$state<{board:Board;draft:Draft}|null>(null),templateTarget=$state<{board:Board;listId:number}|null>(null),templateUnknown=$state(false);
+ let templateOpen=$state(false),templateSource=$state<{board:Board;draft:Draft}|null>(null),templateTarget=$state<{board:Board;listId:number;route?:string}|null>(null),templateUnknown=$state(false);
  let templateRef:TemplateDialog|undefined=$state();
  let templateSafety:ReturnType<typeof templateUncertainty>|null=null;
  function clearTemplateUnknown(){templateSafety?.clear();templateUnknown=false}
@@ -113,14 +115,15 @@
   if(!overlayReady()||templateUnknown||uncertainScope)return;
   const uid=user?.id,token=requestEpoch;
   if(draft&&!await leaveDraft(true))return;
-  try{const fresh=await api<Board>(`/boards/${boardId}`);if(uid!==user?.id||token!==requestEpoch||!fresh.lists.some(l=>l.id===listId)||!overlayReady())return;board=fresh;writer=null;templateReturn=restore;templateSource=null;templateTarget={board:fresh,listId};templateOpen=true}catch(e){fail(e)}
+  try{const fresh=await api<Board>(`/boards/${boardId}`);if(uid!==user?.id||token!==requestEpoch||!fresh.lists.some(l=>l.id===listId)||!overlayReady())return;board=fresh;writer=null;templateReturn=restore;templateSource=null;templateTarget={board:fresh,listId,route:view==='smart'?smartRoute:''};templateOpen=true}catch(e){fail(e)}
  }
- async function applyTemplate(t:TaskTemplate,ack:boolean){
+ async function applyTemplate(t:TaskTemplate,ack:boolean,date:string){
   if(!templateTarget||templateUnknown||uncertainScope)throw new Error('请先只读核对未知结果');
   const target=templateTarget;
   if(board?.id!==target.board.id||board.revision!==target.board.revision)throw new ApiError(409,'目标版本已变化，请关闭后重新选择目标并核对');
-  const payload=templateApply(target.board,target.listId,t,ack);markTemplateUnknown();
-  try{await writeBoard(payload,target.board.revision,(revision:number)=>{if(revision!==target.board.revision)throw new ApiError(409,'目标版本已变化，请重新核对')});clearTemplateUnknown()}catch(e){if(!unknownOutcome(e))clearTemplateUnknown();throw e}
+  const context=captureContext(target.route,undefined,date,new Date());if(context.needsChoice)throw new ApiError(400,'请选择任务日期；未创建');
+  const payload={...templateApply(target.board,target.listId,t,ack),...(context.schedule?{schedule:context.schedule}:{})};markTemplateUnknown();
+  try{await writeBoard(payload,target.board.revision,(revision:number)=>{if(revision!==target.board.revision)throw new ApiError(409,'目标版本已变化，请重新核对')});clearTemplateUnknown();++taskRefresh;return context.notice}catch(e){if(!unknownOutcome(e))clearTemplateUnknown();throw e}
  }
  async function reconcileTemplates(){const uid=user?.id;try{await api('/templates');if(uid===user?.id&&confirm('已只读刷新模板列表。请打开模板库核对名称和内容，并核对目标清单任务；不会自动重复保存或创建。确认解除本次阻止？')){templateSafety?.clear();templateUnknown=false}}catch(e){fail(e)}}
  async function closeTemplates(){templateOpen=false;templateSource=null;templateTarget=null;await tick();templateReturn?.();templateReturn=undefined;detailRef?.resumeFocus()}
@@ -614,7 +617,7 @@
  <aside class="function-rail" aria-label="功能栏">{@render functions()}</aside>
  <aside class="three-pane-nav" aria-label="任务与清单导航">{@render navigation()}</aside>
  <header class="mobile-navigation"><button aria-label="打开导航" onclick={showDrawer}>☰</button><strong class="mobile-brand"><BrandMark size={26}/><Wordmark height={22}/></strong><span>{user.username}</span></header>
-<main class="workspace">{#if templateUnknown}<div class="alert" role="status">私人模板写入结果未知，已阻止重复发送。<button onclick={reconcileTemplates}>只读核对模板并明确恢复</button></div>{/if}{#if uncertainScope}<div class="alert" role="status">写入结果未知，未自动重放。请先核对服务器状态。<button onclick={recoverWriter}>只读核对最新版本并明确恢复</button></div>{/if}{#if error}<div class="alert" role="alert">{error}</div>{/if}
+<main use:completionClearanceOwner class="workspace">{#if templateUnknown}<div class="alert" role="status">私人模板写入结果未知，已阻止重复发送。<button onclick={reconcileTemplates}>只读核对模板并明确恢复</button></div>{/if}{#if uncertainScope}<div class="alert" role="status">写入结果未知，未自动重放。请先核对服务器状态。<button onclick={recoverWriter}>只读核对最新版本并明确恢复</button></div>{/if}{#if error}<div class="alert" role="alert">{error}</div>{/if}
 {#if view==='boards'&&board||view==='tasks'||view==='smart'&&!inboxArchive}<div class="selection-toolbar">
  {#if !selecting}<button class="secondary" onclick={()=>selecting=true}>选择任务</button>{:else}<span role="status">已选 {selected.length} / 100</span><button onclick={()=>selected=selectVisible(selected,visibleTasks)}>全选当前已加载任务</button><button onclick={()=>selected=[]}>清空选择</button><button class="primary" disabled={!selected.length||mixedSelection||bulkPreparing||!!uncertainScope} onclick={prepareSelection}>批量修改 ({selected.length})</button><button onclick={clearSelection}>退出选择</button>{/if}
  {#if mixedSelection}<p role="status">只能对同一来源看板执行原子批量操作；请取消其他看板的选择，不会拆分提交。</p>{/if}
