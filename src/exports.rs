@@ -157,7 +157,7 @@ async fn capture(state: &AppState, a: &Actor, s: &Selection) -> Result<Snapshot>
     }
     let bs=rows(&mut tx,s,&ids,"SELECT json_object('id',id,'title',title,'revision',revision,'inbox_owner_id',inbox_owner_id) FROM boards WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY id").await?;
     let lists=rows(&mut tx,s,&ids,"SELECT json_object('id',id,'board_id',board_id,'title',title,'position',position,'inbox_default',json(CASE WHEN inbox_default THEN 'true' ELSE 'false' END)) FROM lists WHERE board_id IN (SELECT value FROM json_each(?1)) ORDER BY board_id,position,id").await?;
-    let mut tasks=rows(&mut tx,s,&ids,"SELECT json_object('id',c.id,'board_id',l.board_id,'list_id',c.list_id,'title',c.title,'description',c.description,'position',c.position,'archived',json(CASE WHEN c.archived THEN 'true' ELSE 'false' END),'completed',json(CASE WHEN c.completed THEN 'true' ELSE 'false' END),'assignee_id',c.assignee_id,'due_date',c.due_date,'schedule',c.schedule,'anchor_schedule',c.anchor_schedule,'series_id',c.series_id,'predecessor_id',c.predecessor_id,'occurrence_no',c.occurrence_no,'touch_version',c.touch_version) FROM selected c JOIN lists l ON l.id=c.list_id ORDER BY l.board_id,l.position,l.id,c.position,c.id").await?;
+    let mut tasks=rows(&mut tx,s,&ids,"SELECT json_object('id',c.id,'board_id',l.board_id,'list_id',c.list_id,'title',c.title,'description',c.description,'position',c.position,'archived',json(CASE WHEN c.archived THEN 'true' ELSE 'false' END),'completed',json(CASE WHEN c.completed THEN 'true' ELSE 'false' END),'skipped',json(CASE WHEN c.skipped THEN 'true' ELSE 'false' END),'assignee_id',c.assignee_id,'due_date',c.due_date,'schedule',c.schedule,'anchor_schedule',c.anchor_schedule,'series_id',c.series_id,'predecessor_id',c.predecessor_id,'occurrence_no',c.occurrence_no,'touch_version',c.touch_version) FROM selected c JOIN lists l ON l.id=c.list_id ORDER BY l.board_id,l.position,l.id,c.position,c.id").await?;
     let selected: BTreeSet<i64> = tasks.iter().filter_map(|v| v["id"].as_i64()).collect();
     for task in &mut tasks {
         for key in ["schedule", "anchor_schedule"] {
@@ -249,6 +249,7 @@ fn csv(doc: &Value) -> Result<Vec<u8>> {
         "list_id",
         "list",
         "completed",
+        "skipped",
         "archived",
         "assignee_id",
         "assignee",
@@ -289,6 +290,7 @@ fn csv(doc: &Value) -> Result<Vec<u8>> {
             text(&task["list_id"]),
             lookup("lists", &task["list_id"], "title"),
             text(&task["completed"]),
+            text(&task["skipped"]),
             text(&task["archived"]),
             text(&task["assignee_id"]),
             lookup("users", &task["assignee_id"], "username"),
@@ -577,7 +579,7 @@ async fn build_zip(
         entries.push(json!({"path":path,"attachment_id":o.id,"card_id":o.card_id,"size":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
     }
     let exclusions: Vec<_>=snap.doc["attachments"].as_array().ok_or_else(internal)?.iter().filter(|v|v["state"]!="ready").map(|v|json!({"attachment_id":v["id"],"card_id":v["card_id"],"state":v["state"],"reason":"not_ready"})).collect();
-    let manifest = json!({"schema_version":1,"kind":"norns-selected-originals","expected_snapshot":snap.hash,"ready_original_count":snap.originals.len(),"ready_original_bytes":total,"entries":entries,"excluded_attachments":exclusions});
+    let manifest = json!({"schema_version":1,"kind":"norns-selected-originals","expected_snapshot":snap.hash,"tasks":snap.doc["tasks"],"ready_original_count":snap.originals.len(),"ready_original_bytes":total,"entries":entries,"excluded_attachments":exclusions});
     zip_entry(&mut zip, "manifest.json", &encode(&manifest)?)?;
     let written = zip.finish().map_err(|_| zip_large())?;
     written.0.sync_all().map_err(|_| internal())?;

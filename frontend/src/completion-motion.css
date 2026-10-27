@@ -1,11 +1,27 @@
-/* Pending checkmark acknowledges the gesture, not a successful write. */
+/* Presentation only. Render .completion-status and .completion-seal as real DOM;
+   completionAppearance supplies text/state, the App owner supplies acknowledgement. */
 [data-completion-id] strong,.content-title{transition:color 160ms ease,opacity 160ms ease}
-[data-completion-id][data-completion-phase="pending"] strong,[data-completion-id][data-completion-phase="settling"] strong,.content-title[data-completion-phase="pending"]{color:var(--secondary)!important;opacity:1}
+[data-completion-id][data-completion-phase="pending"] strong,.content-title[data-completion-phase="pending"]{color:var(--secondary)!important;opacity:1}
 [data-completion-phase="pending"] input[type="checkbox"]{accent-color:var(--secondary);opacity:.65}
-[data-completion-phase="settling"] input[type="checkbox"]{accent-color:var(--accent)}
+/* Existing native checked projection must not look like a confirmed check while saving.
+   Integration also binds checked to completionAppearance(entry).checked. */
+[data-completion-phase="pending"] input[type="checkbox"]:checked{appearance:none;width:16px;height:16px;border:1px solid var(--secondary);border-radius:4px;background:var(--surface-muted);opacity:1}
 .completion-button[data-completion-phase="pending"]{background:var(--surface-muted);color:var(--secondary)}
-.completion-button[data-completion-phase="pending"]::before{content:'✓';margin-right:6px}
+[data-completion-id][data-completion-phase="settling"]{background-color:color-mix(in srgb,var(--accent) 8%,var(--surface));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent);transition:background-color 180ms ease,box-shadow 180ms ease}
+[data-completion-phase="settling"] input[type="checkbox"]{accent-color:var(--accent)}
+.completion-seal{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--completion-ink,var(--on-accent,#fff));animation:completion-seal-in 180ms ease-out}
+.completion-seal svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.completion-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:1.4;color:var(--text);font-weight:550}
+.completion-status[data-completion-phase="pending"]{color:var(--secondary);font-weight:400}
 .card-completion,.smart-check{position:relative}
 .completion-pending{position:absolute;left:50%;bottom:0;transform:translateX(-50%);white-space:nowrap;font-size:10px;line-height:13px;color:var(--secondary);font-weight:400;pointer-events:none}
 .smart-check .completion-pending{bottom:-1px}
-@media(prefers-reduced-motion:reduce){[data-completion-id] strong,.content-title{transition:none}}
+@keyframes completion-seal-in{from{opacity:.5;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){
+ [data-completion-id] strong,.content-title,[data-completion-id][data-completion-phase="settling"]{transition:none}
+ .completion-seal{animation:none}
+}
+@media(forced-colors:active){
+ .completion-seal{background:CanvasText;color:Canvas}
+ [data-completion-id][data-completion-phase="settling"]{outline:1px solid CanvasText;box-shadow:none}
+}

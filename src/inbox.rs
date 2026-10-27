@@ -86,6 +86,7 @@ pub struct Preview {
     task_count: i64,
     archived_count: i64,
     completed_count: i64,
+    skipped_count: i64,
     comment_count: i64,
     checklist_count: i64,
     attachment_count: i64,
@@ -109,7 +110,8 @@ async fn prepare(
     boards::role(tx, a, target.target_board_id).await?;
     let target_revision:i64=sqlx::query_scalar("SELECT b.revision FROM boards b JOIN lists l ON l.board_id=b.id WHERE b.id=? AND l.id=? AND b.inbox_owner_id IS NULL").bind(target.target_board_id).bind(target.target_list_id).fetch_optional(&mut **tx).await?.ok_or_else(error::missing)?;
     // UNION (not UNION ALL) terminates traversal even for corrupt cycles.
-    let nodes:Vec<(i64,i64,Option<i64>,i64,bool,bool)>=sqlx::query_as("WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT c.id FROM cards c JOIN cards prior ON c.predecessor_id=prior.id OR prior.predecessor_id=c.id OR (c.series_id IS NOT NULL AND c.series_id=prior.series_id) JOIN chain ON chain.id=prior.id) SELECT c.id,c.list_id,c.predecessor_id,c.touch_version,c.archived,c.completed FROM cards c JOIN chain ON chain.id=c.id ORDER BY c.id").bind(card).fetch_all(&mut **tx).await?;
+    type ChainNode = (i64, i64, Option<i64>, i64, bool, bool, bool);
+    let nodes:Vec<ChainNode>=sqlx::query_as("WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT c.id FROM cards c JOIN cards prior ON c.predecessor_id=prior.id OR prior.predecessor_id=c.id OR (c.series_id IS NOT NULL AND c.series_id=prior.series_id) JOIN chain ON chain.id=prior.id) SELECT c.id,c.list_id,c.predecessor_id,c.touch_version,c.archived,c.completed,c.skipped FROM cards c JOIN chain ON chain.id=c.id ORDER BY c.id").bind(card).fetch_all(&mut **tx).await?;
     let mut cards = Vec::new();
     let (
         mut archived_count,
@@ -138,7 +140,8 @@ async fn prepare(
             break;
         }
     }
-    for (id, list, parent, touch, archived, completed) in &nodes {
+    let mut skipped_count = 0;
+    for (id, list, parent, touch, archived, completed, skipped) in &nodes {
         if *list != source_list || parent.is_some_and(|p| !nodes.iter().any(|n| n.0 == p)) {
             return Err(chain_invalid());
         }
@@ -163,6 +166,7 @@ async fn prepare(
             .ok_or_else(error::invalid)?;
         archived_count += i64::from(*archived);
         completed_count += i64::from(*completed);
+        skipped_count += i64::from(*skipped);
         cards.push(ExpectedCard {
             id: *id,
             touch_version: *touch,
@@ -180,6 +184,7 @@ async fn prepare(
         cards,
         archived_count,
         completed_count,
+        skipped_count,
         comment_count,
         checklist_count,
         attachment_count,

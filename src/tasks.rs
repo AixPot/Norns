@@ -27,6 +27,7 @@ pub struct Task {
     title: String,
     description: String,
     completed: bool,
+    skipped: bool,
     assignee_id: Option<i64>,
     assignee_name: Option<String>,
     due_date: Option<String>,
@@ -65,7 +66,7 @@ pub async fn list(
 ) -> Result<Json<Discovery>> {
     let status = f.status.as_deref().unwrap_or("all");
     let view = f.view.as_deref().unwrap_or("all");
-    if !["all", "complete", "incomplete"].contains(&status)
+    if !["all", "complete", "incomplete", "skipped"].contains(&status)
         || !["all", "mine", "today", "tomorrow", "next7", "upcoming"].contains(&view)
         || f.q.as_ref().is_some_and(|q| q.len() > 500)
     {
@@ -89,7 +90,7 @@ pub async fn list(
     let start = "COALESCE(json_extract(c.schedule,'$.start_date'),c.due_date)";
     let end = "COALESCE(json_extract(c.schedule,'$.end_date'),json_extract(c.schedule,'$.start_date'),c.due_date)";
     let mut q = QueryBuilder::<Sqlite>::new(
-        "SELECT c.id,c.title,c.description,c.completed,c.assignee_id,u.username AS assignee_name,c.due_date,c.schedule,b.id AS board_id,b.title AS board_title,l.id AS list_id,l.title AS list_title,c.position,l.position AS list_position FROM cards c JOIN lists l ON l.id=c.list_id JOIN boards b ON b.id=l.board_id JOIN board_members m ON m.board_id=b.id LEFT JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=",
+        "SELECT c.id,c.title,c.description,c.completed,c.skipped,c.assignee_id,u.username AS assignee_name,c.due_date,c.schedule,b.id AS board_id,b.title AS board_title,l.id AS list_id,l.title AS list_title,c.position,l.position AS list_position FROM cards c JOIN lists l ON l.id=c.list_id JOIN boards b ON b.id=l.board_id JOIN board_members m ON m.board_id=b.id LEFT JOIN users u ON u.id=c.assignee_id WHERE c.archived=0 AND m.user_id=",
     );
     q.push_bind(a.user.id);
     q.push(" AND (b.inbox_owner_id IS NULL OR b.inbox_owner_id=m.user_id)");
@@ -106,8 +107,17 @@ pub async fn list(
     if let Some(id) = f.assignee_id {
         q.push(" AND c.assignee_id=").push_bind(id);
     }
-    if status != "all" {
-        q.push(" AND c.completed=").push_bind(status == "complete");
+    match status {
+        "complete" => {
+            q.push(" AND c.completed=1");
+        }
+        "incomplete" => {
+            q.push(" AND c.completed=0 AND c.skipped=0");
+        }
+        "skipped" => {
+            q.push(" AND c.skipped=1");
+        }
+        _ => {}
     }
     if view == "mine" {
         q.push(" AND c.assignee_id=").push_bind(a.user.id);
@@ -124,7 +134,7 @@ pub async fn list(
         ));
     }
     if view == "upcoming" {
-        q.push(format!(" AND c.completed=0 AND {end}>date('now','+8 hours') AND {end}<=date('now','+8 hours','+7 days')"));
+        q.push(format!(" AND c.completed=0 AND c.skipped=0 AND {end}>date('now','+8 hours') AND {end}<=date('now','+8 hours','+7 days')"));
     }
     if let Some(from) = f.from {
         q.push(format!(" AND {end}>=")).push_bind(from);

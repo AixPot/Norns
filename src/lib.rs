@@ -80,7 +80,19 @@ pub async fn app_with_static(url: &str, origin: &str, secure: bool, static_dir: 
         .route("/api/boards", get(boards::list).post(boards::create))
         .route("/api/boards/{id}", get(boards::get))
         .route("/api/boards/{id}/mutate", post(boards::mutate))
+        .route(
+            "/api/boards/{id}/lists/{list}/remove-preview",
+            get(boards::list_remove_preview),
+        )
+        .route(
+            "/api/boards/{id}/cards/{card}/history",
+            get(boards::history),
+        )
         .route("/api/boards/{id}/cards/{card}", get(boards::get_card))
+        .route(
+            "/api/boards/{id}/cards/{card}/skip-preview",
+            get(boards::skip_preview),
+        )
         .route(
             "/api/boards/{id}/cards/{card}/attachments",
             get(attachments::list).post(attachments::init),

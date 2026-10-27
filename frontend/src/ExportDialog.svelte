@@ -43,7 +43,7 @@
  {#if message}<div class="alert" role="status">{message}</div>{/if}
  {#if loading}<p role="status">正在读取可访问范围…</p>{:else}
  <fieldset><legend>选择范围（最多 20 个）</legend><div class="export-scopes">{#each scopes as b}<label class="checkbox"><input type="checkbox" aria-label={b.title} checked={selected.includes(b.id)} onchange={e=>changeScope(b.id,e.currentTarget.checked)} disabled={!selected.includes(b.id)&&selected.length>=20}/><span>{b.id===inboxId?'🔒 ':''}{b.title}</span></label>{/each}</div></fieldset>
- <fieldset><legend>任务状态（独立选项）</legend><label class="checkbox"><input type="checkbox" aria-label="包含已完成任务" bind:checked={completed} onchange={invalidate}/>包含已完成任务</label><label class="checkbox"><input type="checkbox" aria-label="包含已归档任务" bind:checked={archived} onchange={invalidate}/>包含已归档任务</label></fieldset>
+ <fieldset><legend>任务状态（独立选项）</legend><label class="checkbox"><input type="checkbox" aria-label="包含已完成任务" bind:checked={completed} onchange={invalidate}/>包含已完成任务</label><label class="checkbox"><input type="checkbox" aria-label="包含已归档任务" bind:checked={archived} onchange={invalidate}/>包含已归档任务</label><p class="muted">已跳过任务不属于已完成，按归档选项纳入；导出保留 skipped 状态。</p></fieldset>
  <label>文件格式<select aria-label="导出格式" bind:value={format} onchange={invalidate}><option value="csv">CSV · 任务表</option><option value="json">JSON · 所选完整应用数据</option><option value="zip">ZIP · 应用数据及可用附件原件</option></select></label>
  {#if format==='zip'}<p class="export-memory-note">浏览器需先在内存接收完整文件（最多 160 MiB），移动设备请选小范围。</p>{/if}
  <details><summary>文件内容、限制与注意事项</summary>

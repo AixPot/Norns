@@ -699,3 +699,37 @@ async fn zip_combined_metadata_keeps_inherited_16mib_limit() {
         StatusCode::PAYLOAD_TOO_LARGE
     );
 }
+
+#[tokio::test]
+async fn skipped_is_retained_by_default_in_json_csv_and_manifest() {
+    let f = Fixture::new().await;
+    sqlx::query("INSERT INTO cards(id,list_id,title,position,skipped) VALUES(99,?,'skipped',0,1)")
+        .bind(f.list)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let (doc, _) = document(&f, f.selection()).await;
+    assert_eq!(doc["tasks"][0]["skipped"], true);
+    let mut selection = f.selection();
+    selection["format"] = json!("csv");
+    let (_, bytes) = document(&f, selection).await;
+    let csv = String::from_utf8(bytes).unwrap();
+    let columns: Vec<_> = csv
+        .lines()
+        .next()
+        .unwrap()
+        .trim_start_matches('\u{feff}')
+        .split(',')
+        .collect();
+    assert!(columns.contains(&"skipped"), "{csv}");
+    let mut selection = f.selection();
+    selection["format"] = json!("zip");
+    let p = f.preview(selection.clone()).await;
+    selection["expected_snapshot"] = p["expected_snapshot"].clone();
+    let (s, _, bytes) = f.call("/api/exports/download", selection).await;
+    assert_eq!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&bytes));
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let manifest: Value = serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
+    assert_eq!(manifest["tasks"][0]["id"], 99);
+    assert_eq!(manifest["tasks"][0]["skipped"], true);
+}

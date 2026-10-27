@@ -5,7 +5,7 @@ export function projectCalendar(tasks,range){
   const allDay=[],timed=[];
   for(const task of tasks){
    const s=task.schedule||(task.due_date?{start_date:task.due_date}:null);
-   if(task.archived||!s?.start_date||date<s.start_date||date>(s.end_date||s.start_date))continue;
+   if(task.archived||task.skipped||!s?.start_date||date<s.start_date||date>(s.end_date||s.start_date))continue;
    if(!s.start_time&&!s.end_time){allDay.push({task});continue}
    const endDate=s.end_date||s.start_date,cross=endDate!==s.start_date;
    let start,end;

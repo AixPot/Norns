@@ -1,7 +1,7 @@
 import {groupSmartTasks} from './task-groups.mjs';
-/** Pure display projection. Returns {groups: [{key,label,tasks}], completed: tasks[]}.
+/** Pure display projection. Returns {groups: [{key,label,tasks}], completed: tasks[], skipped: tasks[]}.
  * Input records retain identity; arrays are new. Never expands recurrence or changes
- * server membership. Completed records are a separate bottom section, not groups.
+ * server membership. Completed and skipped history are separate sections, not active groups.
  * Options: route is the existing smart route (or 'search'); today is the caller's
  * YYYY-MM-DD civil day, required for Today/next7 default grouping. group supports
  * default (existing smart grouping), none (one all group), date (effective date,
@@ -15,7 +15,7 @@ import {groupSmartTasks} from './task-groups.mjs';
  */
 export function projectTaskView(tasks,{route='search',today,group='default',sort='manual'}={}){
  const compare=sort==='date'?byDate:physical;
- const open=tasks.filter(t=>!t.completed).sort(compare),completed=tasks.filter(t=>t.completed).sort(compare);
+ const open=tasks.filter(t=>!t.completed&&!t.skipped).sort(compare),completed=tasks.filter(t=>t.completed&&!t.skipped).sort(compare),skipped=tasks.filter(t=>t.skipped).sort(compare);
  let groups;
  if(group==='none')groups=[{key:'all',label:'',tasks:open}];
  else if(group==='board'){
@@ -27,7 +27,7 @@ export function projectTaskView(tasks,{route='search',today,group='default',sort
   for(const t of open){const date=effectiveDate(t);const key=(route==='next7'&&date&&date<today?today:date)||'undated';if(!dates.has(key))dates.set(key,{key,label:key==='undated'?'无日期':key,tasks:[]});dates.get(key).tasks.push(t)}
   groups=[...dates.values()].sort((a,b)=>a.key.localeCompare(b.key));
  }else groups=groupSmartTasks(open,route,today);
- return {groups:groups.map(g=>({...g,tasks:[...g.tasks]})),completed};
+ return {groups:groups.map(g=>({...g,tasks:[...g.tasks]})),completed,skipped};
 }
 
 const number=v=>Number.isFinite(v)?v:0;
@@ -46,7 +46,7 @@ function byDate(a,b){const x=effectiveDate(a),y=effectiveDate(b);return (x&&y?x.
 export function projectBoardView(board,{sort='manual'}={}){
  const compare=sort==='date'?byDate:physical;
  return {columns:[...board.lists].sort((a,b)=>number(a.position)-number(b.position)||number(a.id)-number(b.id)).map(list=>{
-  const tasks=board.cards.filter(t=>t.list_id===list.id&&!t.archived);
+  const tasks=board.cards.filter(t=>t.list_id===list.id&&!t.archived&&!t.skipped);
   return {list,tasks:[...tasks.filter(t=>!t.completed).sort(compare),...tasks.filter(t=>t.completed).sort(compare)]};
  })};
 }

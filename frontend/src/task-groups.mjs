@@ -7,6 +7,7 @@ function dateHeading(date,today){
 
 // Presentation only: consume the complete server result, never expand recurrence.
 export function groupSmartTasks(tasks,route,today){
+ tasks=tasks.filter(t=>!t.skipped&&!t.completed);
  if(route==='next7'){
   const groups=new Map();
   for(const task of tasks){

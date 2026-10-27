@@ -1,13 +1,33 @@
 // Presentation only: never mutates acknowledged records or delays a write.
-export function createCompletionMotion({change,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout,reduced=()=>false}){
+export function createCompletionMotion({change,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout,reduced=()=>false,onconfirmed=()=>{},valid=()=>true}){
  let entries=[],timers=new Map();
  const emit=()=>change([...entries]);
  function remove(entry){clearTimer(timers.get(entry));timers.delete(entry);entries=entries.filter(e=>e!==entry);emit()}
  return {
-  begin(record,target){const entry={id:record.id,record:{...record},target,phase:'pending',started:now()};entries=entries.filter(e=>{if(e.id!==entry.id)return true;clearTimer(timers.get(e));timers.delete(e);return false});entries.push(entry);emit();return entry},
-  finish(entry,success){if(!entries.includes(entry))return;if(!success||!entry.target||reduced()){remove(entry);return}entry.phase='settling';emit();const delay=Math.max(120,360-(now()-entry.started));timers.set(entry,setTimer(()=>remove(entry),delay))},
+  begin(record,target,owner){
+   const entry={owner,id:record.id,record:{...record},target,confirmed:false,phase:'pending',started:now()};
+   entries=entries.filter(e=>{if(e.id!==entry.id)return true;clearTimer(timers.get(e));timers.delete(e);return false});
+   entries.push(entry);emit();return entry;
+  },
+  finish(entry,success){
+   if(!entries.includes(entry)||entry.confirmed)return false;
+   if(success!==true||entry.target!==true||!valid(entry)){remove(entry);return false}
+   entry.confirmed=true;entry.phase='settling';entry.acknowledged=now();emit();
+   // Synchronous handoff to the stable 10-second notice, including reduced motion.
+   onconfirmed(entry);
+   if(!entries.includes(entry))return true;
+   if(reduced()){remove(entry);return true}
+   // Always give the acknowledged stamp time to land; network latency is not feedback.
+   timers.set(entry,setTimer(()=>remove(entry),360));return true;
+  },
+  cancel(entry){if(entries.includes(entry))remove(entry)},
   clear(){for(const timer of timers.values())clearTimer(timer);timers.clear();entries=[];emit()},
  };
+}
+// Render real text, not CSS-generated accessible content. Pending never checks completion.
+export function completionAppearance(entry){
+ const busy=entry?.phase==='pending',seal=entry?.confirmed===true&&entry.target===true;
+ return {busy,checked:seal?true:entry?.record.completed,seal,label:busy?(entry.target===false?'恢复中':'保存中'):seal?'已完成':'',phase:entry?.phase||''};
 }
 export function completionRows(rows,entries){
  const held=new Map(entries.filter(e=>e.target).map(e=>[e.id,e]));

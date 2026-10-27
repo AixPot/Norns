@@ -34,6 +34,7 @@ pub struct Card {
     position: i64,
     archived: bool,
     completed: bool,
+    skipped: bool,
     schedule: Option<sqlx::types::Json<crate::schedule::Schedule>>,
     series_id: Option<String>,
     predecessor_id: Option<i64>,
@@ -110,7 +111,7 @@ pub(crate) async fn snapshot(
     .bind(id)
     .fetch_all(&mut **tx)
     .await?;
-    let cards=sqlx::query_as("SELECT c.id,c.list_id,c.title,c.description,c.position,c.archived,c.completed,c.schedule,c.series_id,c.predecessor_id,c.occurrence_no,c.anchor_schedule,c.touch_version,c.assignee_id,c.due_date FROM cards c JOIN lists l ON c.list_id=l.id WHERE l.board_id=? ORDER BY c.position,c.id").bind(id).fetch_all(&mut **tx).await?;
+    let cards=sqlx::query_as("SELECT c.id,c.list_id,c.title,c.description,c.position,c.archived,c.completed,c.skipped,c.schedule,c.series_id,c.predecessor_id,c.occurrence_no,c.anchor_schedule,c.touch_version,c.assignee_id,c.due_date FROM cards c JOIN lists l ON c.list_id=l.id WHERE l.board_id=? ORDER BY c.position,c.id").bind(id).fetch_all(&mut **tx).await?;
     let members=sqlx::query_as("SELECT m.user_id,u.username,m.role,u.active FROM board_members m JOIN users u ON u.id=m.user_id WHERE m.board_id=? ORDER BY m.user_id").bind(id).fetch_all(&mut **tx).await?;
     let checklist=sqlx::query_as("SELECT i.id,i.card_id,i.title,i.checked,i.position FROM checklist_items i JOIN cards c ON c.id=i.card_id JOIN lists l ON l.id=c.list_id WHERE l.board_id=? ORDER BY i.card_id,i.position,i.id").bind(id).fetch_all(&mut **tx).await?;
     let comments=sqlx::query_as("SELECT n.id,n.card_id,n.author_id,u.username AS author,n.body,n.created_at FROM comments n JOIN users u ON u.id=n.author_id JOIN cards c ON c.id=n.card_id JOIN lists l ON l.id=c.list_id WHERE l.board_id=? ORDER BY n.created_at,n.id").bind(id).fetch_all(&mut **tx).await?;
@@ -244,8 +245,27 @@ struct BulkChanges {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListRemove {
+    preview: ListRemovePreview,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardSkip {
+    card_id: i64,
+    preview: SkipPreview,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardUnskip {
+    card_id: i64,
+}
+#[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
+    ListRemove(ListRemove),
+    CardSkip(CardSkip),
+    CardUnskip(CardUnskip),
     CardsBulk(CardsBulk),
     CardSchedule {
         card_id: i64,
@@ -363,13 +383,79 @@ pub async fn mutate(
         return Err(error::forbidden());
     }
     match input.action {
+        Action::ListRemove(ListRemove { preview }) => {
+            let current =
+                prepare_list_remove(&mut tx, id, preview.source_list_id, preview.target_list_id)
+                    .await?;
+            if current != preview {
+                return Err(error::conflict());
+            }
+            let mut position: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM cards WHERE list_id=?",
+            )
+            .bind(preview.target_list_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            for card in &current.cards {
+                sqlx::query("UPDATE cards SET list_id=?,position=? WHERE id=?")
+                    .bind(current.target_list_id)
+                    .bind(position)
+                    .bind(card.id)
+                    .execute(&mut *tx)
+                    .await?;
+                position += 1;
+            }
+            // Never cascade: verify the shell is empty before deleting only the list.
+            let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cards WHERE list_id=?")
+                .bind(current.source_list_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            if remaining != 0 {
+                return Err(error::conflict());
+            }
+            sqlx::query("DELETE FROM lists WHERE id=? AND board_id=?")
+                .bind(current.source_list_id)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            let lists: Vec<i64> =
+                sqlx::query_scalar("SELECT id FROM lists WHERE board_id=? ORDER BY position,id")
+                    .bind(id)
+                    .fetch_all(&mut *tx)
+                    .await?;
+            for (pos, list) in lists.iter().enumerate() {
+                sqlx::query("UPDATE lists SET position=? WHERE id=?")
+                    .bind(pos as i64)
+                    .bind(list)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        Action::CardSkip(CardSkip { card_id, preview }) => {
+            let card = require_card(&mut tx, id, card_id).await?;
+            let instant = now();
+            let current = prepare_skip(&mut tx, id, &card, instant).await?;
+            if serde_json::to_value(&current).map_err(|_| error::invalid())?
+                != serde_json::to_value(&preview).map_err(|_| error::invalid())?
+            {
+                return Err(error::conflict());
+            }
+            transition_card(&mut tx, &card, false, true, instant).await?;
+        }
+        Action::CardUnskip(CardUnskip { card_id }) => {
+            let card = require_card(&mut tx, id, card_id).await?;
+            if !card.skipped {
+                return Err(error::invalid());
+            }
+            transition_card(&mut tx, &card, false, false, now()).await?;
+        }
         Action::CardsBulk(input) => {
             crate::templates::write_auth(&mut tx, &a, &s, &headers).await?;
             cards_bulk(&mut tx, id, input).await?;
         }
         Action::CardSchedule { card_id, schedule } => {
             let card = require_card(&mut tx, id, card_id).await?;
-            if card.completed {
+            if card.completed || card.skipped {
                 return Err(error::Error(
                     StatusCode::BAD_REQUEST,
                     "completed_schedule",
@@ -464,7 +550,7 @@ pub async fn mutate(
             let card = require_card(&mut tx, id, card_id).await?;
             // Old clients changing due_date intentionally replace a rich schedule; assignee-only saves preserve it.
             if card.due_date != due_date {
-                if card.completed {
+                if card.completed || card.skipped {
                     return Err(error::invalid());
                 }
                 sqlx::query("UPDATE cards SET series_id=NULL,anchor_schedule=NULL,occurrence_no=1 WHERE id=?").bind(card_id).execute(&mut *tx).await?;
@@ -807,7 +893,7 @@ async fn require_list(tx: &mut Transaction<'_, Sqlite>, board: i64, list: i64) -
     Ok(())
 }
 async fn require_card(tx: &mut Transaction<'_, Sqlite>, board: i64, card: i64) -> Result<Card> {
-    sqlx::query_as("SELECT c.id,c.list_id,c.title,c.description,c.position,c.archived,c.completed,c.schedule,c.series_id,c.predecessor_id,c.occurrence_no,c.anchor_schedule,c.touch_version,c.assignee_id,c.due_date FROM cards c JOIN lists l ON l.id=c.list_id WHERE c.id=? AND l.board_id=?").bind(card).bind(board).fetch_optional(&mut **tx).await?.ok_or_else(error::missing)
+    sqlx::query_as("SELECT c.id,c.list_id,c.title,c.description,c.position,c.archived,c.completed,c.skipped,c.schedule,c.series_id,c.predecessor_id,c.occurrence_no,c.anchor_schedule,c.touch_version,c.assignee_id,c.due_date FROM cards c JOIN lists l ON l.id=c.list_id WHERE c.id=? AND l.board_id=?").bind(card).bind(board).fetch_optional(&mut **tx).await?.ok_or_else(error::missing)
 }
 async fn reorder(tx: &mut Transaction<'_, Sqlite>, list: i64, ids: Option<Vec<i64>>) -> Result<()> {
     let ids = match ids {
@@ -921,9 +1007,26 @@ async fn complete_card(
     card: &Card,
     completed: bool,
 ) -> Result<()> {
-    if card.completed == completed {
+    if card.skipped {
+        return Err(error::invalid());
+    }
+    transition_card(tx, card, completed, false, now()).await
+}
+async fn transition_card(
+    tx: &mut Transaction<'_, Sqlite>,
+    card: &Card,
+    completed: bool,
+    skipped: bool,
+    instant: i64,
+) -> Result<()> {
+    if card.completed == completed && card.skipped == skipped {
         return Ok(());
     }
+    let board: i64 = sqlx::query_scalar("SELECT board_id FROM lists WHERE id=?")
+        .bind(card.list_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    chain_ids(tx, board, card.id).await?;
     if completed && card.archived {
         return Err(error::Error(
             StatusCode::BAD_REQUEST,
@@ -931,9 +1034,9 @@ async fn complete_card(
             "请先恢复卡片，再完成此任务",
         ));
     }
-    if !completed {
+    if !completed && !skipped {
         let successor: Option<(i64, i64)> =
-            sqlx::query_as("SELECT id,touch_version FROM cards WHERE predecessor_id=?")
+            sqlx::query_as("SELECT id,CASE WHEN completed=1 OR skipped=1 OR archived=1 THEN -1 ELSE touch_version END FROM cards WHERE predecessor_id=?")
                 .bind(card.id)
                 .fetch_optional(&mut **tx)
                 .await?;
@@ -956,7 +1059,7 @@ async fn complete_card(
                 .await?;
         }
     } else if let Some(schedule) = &card.schedule {
-        let local = chrono::DateTime::from_timestamp(now(), 0)
+        let local = chrono::DateTime::from_timestamp(instant, 0)
             .ok_or_else(error::invalid)?
             .naive_utc()
             + chrono::Duration::hours(8);
@@ -991,8 +1094,9 @@ async fn complete_card(
                 .await?;
         }
     }
-    sqlx::query("UPDATE cards SET completed=? WHERE id=?")
+    sqlx::query("UPDATE cards SET completed=?,skipped=? WHERE id=?")
         .bind(completed)
+        .bind(skipped)
         .bind(card.id)
         .execute(&mut **tx)
         .await?;
@@ -1042,8 +1146,12 @@ async fn cards_bulk(tx: &mut Transaction<'_, Sqlite>, board: i64, input: CardsBu
     }
     // Validate every original before any write or successor withdrawal.
     for card in &cards {
+        if card.skipped && !matches!(changes.completed, BulkSet::Keep {}) {
+            return Err(error::invalid());
+        }
         if !matches!(changes.schedule, BulkSchedule::Keep {})
             && (card.completed
+                || card.skipped
                 || card.series_id.is_some()
                 || card.schedule.as_ref().is_some_and(|s| s.repeat.is_some()))
         {
@@ -1062,7 +1170,7 @@ async fn cards_bulk(tx: &mut Transaction<'_, Sqlite>, board: i64, input: CardsBu
         }
         if matches!(changes.completed, BulkSet::Set { value: false }) && card.completed {
             let child: Option<(i64, i64)> =
-                sqlx::query_as("SELECT id,touch_version FROM cards WHERE predecessor_id=?")
+                sqlx::query_as("SELECT id,CASE WHEN completed=1 OR skipped=1 OR archived=1 THEN -1 ELSE touch_version END FROM cards WHERE predecessor_id=?")
                     .bind(card.id)
                     .fetch_optional(&mut **tx)
                     .await?;
@@ -1189,4 +1297,248 @@ async fn cards_bulk(tx: &mut Transaction<'_, Sqlite>, board: i64, input: CardsBu
         }
     }
     Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkipPreview {
+    card_id: i64,
+    revision: i64,
+    touch_version: i64,
+    next_schedule: Option<crate::schedule::Schedule>,
+}
+async fn prepare_skip(
+    tx: &mut Transaction<'_, Sqlite>,
+    board: i64,
+    card: &Card,
+    instant: i64,
+) -> Result<SkipPreview> {
+    if card.completed
+        || card.skipped
+        || card.archived
+        || card.schedule.as_ref().is_none_or(|s| s.repeat.is_none())
+    {
+        return Err(error::invalid());
+    }
+    chain_ids(tx, board, card.id).await?;
+    let child: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cards WHERE predecessor_id=?)")
+            .bind(card.id)
+            .fetch_one(&mut **tx)
+            .await?;
+    if child {
+        return Err(error::conflict());
+    }
+    let s = card.schedule.as_ref().ok_or_else(error::invalid)?;
+    let local = chrono::DateTime::from_timestamp(instant, 0)
+        .ok_or_else(error::invalid)?
+        .naive_utc()
+        + chrono::Duration::hours(8);
+    let next_schedule = crate::schedule::next(
+        s,
+        card.anchor_schedule.as_ref().unwrap_or(s),
+        local,
+        card.occurrence_no as u32,
+    )?;
+    let revision = sqlx::query_scalar("SELECT revision FROM boards WHERE id=?")
+        .bind(board)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(SkipPreview {
+        card_id: card.id,
+        revision,
+        touch_version: card.touch_version,
+        next_schedule,
+    })
+}
+pub async fn skip_preview(
+    State(s): State<AppState>,
+    Extension(a): Extension<Actor>,
+    Path((board, card)): Path<(i64, i64)>,
+) -> Result<Json<SkipPreview>> {
+    let mut tx = s.pool.begin().await?;
+    role(&mut tx, &a, board).await?;
+    let card = require_card(&mut tx, board, card).await?;
+    let result = prepare_skip(&mut tx, board, &card, now()).await?;
+    tx.commit().await?;
+    Ok(Json(result))
+}
+
+fn invalid_chain() -> error::Error {
+    error::Error(
+        StatusCode::CONFLICT,
+        "invalid_recurrence_chain",
+        "重复链归属或结构异常；不会移动或删除任何任务",
+    )
+}
+/// Conservative closure includes series collisions; no foreign content leaves this function.
+async fn chain_ids(tx: &mut Transaction<'_, Sqlite>, board: i64, card: i64) -> Result<Vec<i64>> {
+    let nodes: Vec<(i64,i64,Option<i64>)> = sqlx::query_as("WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT c.id FROM cards c JOIN cards prior ON c.predecessor_id=prior.id OR prior.predecessor_id=c.id OR (c.series_id IS NOT NULL AND c.series_id=prior.series_id) JOIN chain ON chain.id=prior.id) SELECT c.id,l.board_id,c.predecessor_id FROM cards c JOIN lists l ON l.id=c.list_id JOIN chain ON chain.id=c.id ORDER BY c.id").bind(card).fetch_all(&mut **tx).await?;
+    let mut connected = std::collections::HashSet::from([card]);
+    loop {
+        let old = connected.len();
+        for (id, _, parent) in &nodes {
+            if parent.is_some_and(|v| connected.contains(&v)) {
+                connected.insert(*id);
+            }
+            if connected.contains(id)
+                && let Some(parent) = parent
+            {
+                connected.insert(*parent);
+            }
+        }
+        if old == connected.len() {
+            break;
+        }
+    }
+    for (id, owner, _) in &nodes {
+        if *owner != board || !connected.contains(id) {
+            return Err(invalid_chain());
+        }
+        let mut ancestors = std::collections::HashSet::new();
+        let mut current = Some(*id);
+        while let Some(id) = current {
+            if !ancestors.insert(id) {
+                return Err(invalid_chain());
+            }
+            current = nodes
+                .iter()
+                .find(|n| n.0 == id)
+                .ok_or_else(invalid_chain)?
+                .2;
+        }
+    }
+    Ok(nodes.into_iter().map(|n| n.0).collect())
+}
+pub async fn history(
+    State(s): State<AppState>,
+    Extension(a): Extension<Actor>,
+    Path((board, card)): Path<(i64, i64)>,
+) -> Result<Json<serde_json::Value>> {
+    let mut tx = s.pool.begin().await?;
+    role(&mut tx, &a, board).await?;
+    require_card(&mut tx, board, card).await?;
+    let ids = chain_ids(&mut tx, board, card).await?;
+    let mut cards = Vec::new();
+    for id in ids {
+        cards.push(require_card(&mut tx, board, id).await?);
+    }
+    let revision: i64 = sqlx::query_scalar("SELECT revision FROM boards WHERE id=?")
+        .bind(board)
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(
+        serde_json::json!({"board_id":board,"revision":revision,"cards":cards}),
+    ))
+}
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct RemovalCard {
+    id: i64,
+    touch_version: i64,
+}
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ListRemovePreview {
+    board_id: i64,
+    source_list_id: i64,
+    target_list_id: i64,
+    revision: i64,
+    cards: Vec<RemovalCard>,
+    task_count: i64,
+    incomplete_count: i64,
+    completed_count: i64,
+    skipped_count: i64,
+    archived_count: i64,
+    comment_count: i64,
+    checklist_count: i64,
+    attachment_count: i64,
+    pending_upload_count: i64,
+    verifying_upload_count: i64,
+    attachment_fingerprint: String,
+}
+async fn prepare_list_remove(
+    tx: &mut Transaction<'_, Sqlite>,
+    board: i64,
+    source: i64,
+    target: i64,
+) -> Result<ListRemovePreview> {
+    require_list(tx, board, source).await?;
+    require_list(tx, board, target).await?;
+    let protected:bool=sqlx::query_scalar("SELECT inbox_default=1 OR (SELECT inbox_owner_id IS NOT NULL FROM boards WHERE id=board_id) OR (SELECT COUNT(*) FROM lists WHERE board_id=?)<=1 FROM lists WHERE id=?").bind(board).bind(source).fetch_one(&mut **tx).await?;
+    if protected || source == target {
+        return Err(error::invalid());
+    }
+    let rows:Vec<(i64,i64,bool,bool,bool)>=sqlx::query_as("SELECT id,touch_version,completed,skipped,archived FROM cards WHERE list_id=? ORDER BY position,id").bind(source).fetch_all(&mut **tx).await?;
+    let mut verified = std::collections::HashSet::new();
+    let mut cards = Vec::new();
+    let (mut completed_count, mut skipped_count, mut archived_count) = (0, 0, 0);
+    for (id, touch, completed, skipped, archived) in rows {
+        if !verified.contains(&id) {
+            verified.extend(chain_ids(tx, board, id).await?);
+        }
+        completed_count += i64::from(completed);
+        skipped_count += i64::from(skipped);
+        archived_count += i64::from(archived);
+        cards.push(RemovalCard {
+            id,
+            touch_version: touch,
+        });
+    }
+    let (comment_count,checklist_count,attachment_count,pending_upload_count,verifying_upload_count):(i64,i64,i64,i64,i64)=sqlx::query_as("SELECT (SELECT COUNT(*) FROM comments WHERE card_id IN (SELECT id FROM cards WHERE list_id=?1)),(SELECT COUNT(*) FROM checklist_items WHERE card_id IN (SELECT id FROM cards WHERE list_id=?1)),(SELECT COUNT(*) FROM attachments WHERE card_id IN (SELECT id FROM cards WHERE list_id=?1)),(SELECT COUNT(*) FROM attachments WHERE card_id IN (SELECT id FROM cards WHERE list_id=?1) AND state='pending'),(SELECT COUNT(*) FROM attachments WHERE card_id IN (SELECT id FROM cards WHERE list_id=?1) AND state='verifying')").bind(source).fetch_one(&mut **tx).await?;
+    if pending_upload_count > 0 || verifying_upload_count > 0 {
+        return Err(error::Error(
+            StatusCode::CONFLICT,
+            "attachment_processing",
+            "附件处理中，请完成后重新预览",
+        ));
+    }
+    // Include target attachment metadata too: background transitions do not bump board revision.
+    let metadata:Vec<String>=sqlx::query_scalar("SELECT json_object('id',a.id,'card_id',a.card_id,'filename',a.filename,'size',a.size,'mime',a.mime,'state',a.state,'staging',a.staging,'final_key',a.final_key,'expires_at',a.expires_at,'created_at',a.created_at) FROM attachments a JOIN cards c ON c.id=a.card_id WHERE c.list_id IN (?,?) ORDER BY a.id").bind(source).bind(target).fetch_all(&mut **tx).await?;
+    use sha2::{Digest, Sha256};
+    let attachment_fingerprint = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&metadata).map_err(|_| error::invalid())?)
+    );
+    let revision = sqlx::query_scalar("SELECT revision FROM boards WHERE id=?")
+        .bind(board)
+        .fetch_one(&mut **tx)
+        .await?;
+    let task_count = cards.len() as i64;
+    Ok(ListRemovePreview {
+        board_id: board,
+        source_list_id: source,
+        target_list_id: target,
+        revision,
+        cards,
+        task_count,
+        incomplete_count: task_count - completed_count - skipped_count,
+        completed_count,
+        skipped_count,
+        archived_count,
+        comment_count,
+        checklist_count,
+        attachment_count,
+        pending_upload_count,
+        verifying_upload_count,
+        attachment_fingerprint,
+    })
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemovalTarget {
+    target_list_id: i64,
+}
+pub async fn list_remove_preview(
+    State(s): State<AppState>,
+    Extension(a): Extension<Actor>,
+    Path((board, list)): Path<(i64, i64)>,
+    axum::extract::Query(target): axum::extract::Query<RemovalTarget>,
+) -> Result<Json<ListRemovePreview>> {
+    let mut tx = s.pool.begin().await?;
+    role(&mut tx, &a, board).await?;
+    let preview = prepare_list_remove(&mut tx, board, list, target.target_list_id).await?;
+    tx.commit().await?;
+    Ok(Json(preview))
 }

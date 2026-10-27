@@ -20,7 +20,7 @@
  $effect(()=>{
   const q=query;void refresh;
   untrack(()=>{if(q!==displayedQuery)rows=[];displayedQuery=q;message='';loading=true});
-  const poll=createPoller({read:()=>api<TaskDiscoveryResponse>(`/tasks?${q}`),apply:(data:TaskDiscoveryResponse)=>{rows=data.tasks;privateScope=data.inbox;boards=data.boards;onmetadata(data);loading=false;message='';if(boardId&&![...data.boards,...(data.inbox?[data.inbox]:[])].some(b=>String(b.id)===boardId))boardId=''},onerror:(e:unknown)=>{rows=[];loading=false;message=e instanceof Error?e.message:'查询失败';onerror(e)},schedule:(fn:()=>void)=>setTimeout(fn,15000)});
+  const poll=createPoller({read:()=>api<TaskDiscoveryResponse>(`/tasks?${q}`),apply:(data:TaskDiscoveryResponse)=>{rows=data.tasks.filter(t=>!t.skipped);privateScope=data.inbox;boards=data.boards;onmetadata(data);loading=false;message='';if(boardId&&![...data.boards,...(data.inbox?[data.inbox]:[])].some(b=>String(b.id)===boardId))boardId=''},onerror:(e:unknown)=>{rows=[];loading=false;message=e instanceof Error?e.message:'查询失败';onerror(e)},schedule:(fn:()=>void)=>setTimeout(fn,15000)});
   const resume=()=>{void poll.check()};document.addEventListener('visibilitychange',resume);void poll.check();
   return()=>{poll.stop();document.removeEventListener('visibilitychange',resume)};
  });
@@ -29,7 +29,7 @@
 <section class="calendar-view" aria-label="跨看板日历">
  <div class="calendar-heading"><h1>日历</h1><label>看板<select aria-label="日历看板" value={boardId} onchange={e=>changeBoard(e.currentTarget)}><option value="">全部看板</option>{#if privateScope}<option value={String(privateScope.id)}>私人收集箱</option>{/if}{#each boards as b}<option value={String(b.id)}>{b.title}</option>{/each}</select></label></div>
  <div class="calendar-controls"><div class="calendar-navigation"><button aria-label={mode==='month'?'上一月':'上一周'} onclick={()=>onfilter(()=>date=shiftCalendar(date,mode,-1))}>←</button><button onclick={()=>onfilter(()=>date=shanghaiToday())}>今天</button><button aria-label={mode==='month'?'下一月':'下一周'} onclick={()=>onfilter(()=>date=shiftCalendar(date,mode,1))}>→</button></div><h2 aria-live="polite">{mode==='month'?`${date.slice(0,4)}年 ${Number(date.slice(5,7))}月`:`${range.from} — ${range.to}`}</h2><div class="calendar-modes" aria-label="日历视图"><button aria-pressed={mode==='month'} onclick={()=>onfilter(()=>mode='month')}>月</button><button aria-pressed={mode==='week'} onclick={()=>onfilter(()=>mode='week')}>周</button></div></div>
- <p class="calendar-hint">Asia/Shanghai · 周一开始 · 未归档任务，含已完成 · 跨日含起止日 · 仅实际重复实例，无日期不显示</p>
+ <p class="calendar-hint">Asia/Shanghai · 周一开始 · 未归档任务，含已完成、不含已跳过 · 跨日含起止日 · 仅实际重复实例，无日期不显示</p>
  <p class="calendar-hint">窄屏可在日历内左右滑动查看其余日期；周视图可上下滚动查看时间。</p>
  <p class="calendar-status" role="status">{loading?'正在查询…':message||`${rows.length} 个任务`}</p>
  {#if mode==='month'}

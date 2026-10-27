@@ -7,7 +7,7 @@ export function taskSummary(board,cardId){
  const date=s?endpoint(s.start_date,s.start_time)+(s.end_date||s.end_time?' — '+endpoint(s.end_date||s.start_date,s.end_time):'')+(s.timezone?' · '+s.timezone:''):'无';
  const lines=[card.title];
  if(card.description)lines.push('',card.description);
- lines.push('','看板：'+board.title,'列表：'+(board.lists.find(l=>l.id===card.list_id)?.title||'未知列表'),'状态：'+(card.completed?'已完成':'未完成')+' · '+(card.archived?'已归档':'未归档'),'负责人：'+(board.members.find(m=>m.user_id===card.assignee_id)?.username||'未分配'),'日期：'+date);
+ lines.push('','看板：'+board.title,'列表：'+(board.lists.find(l=>l.id===card.list_id)?.title||'未知列表'),'状态：'+(card.skipped?'已跳过':card.completed?'已完成':'未完成')+' · '+(card.archived?'已归档':'未归档'),'负责人：'+(board.members.find(m=>m.user_id===card.assignee_id)?.username||'未分配'),'日期：'+date);
  if(s?.repeat){
   const r=s.repeat,days=['周一','周二','周三','周四','周五','周六','周日'];
   lines.push('重复：每 '+r.interval+' '+({day:'天',week:'周',month:'月',year:'年'}[r.unit]||r.unit)+' · '+(r.mode==='relative'?'按完成时间':'按日历')+(r.weekdays?.length?' · '+r.weekdays.map(d=>days[d]).join('、'):'')+(r.count?' · 共 '+r.count+' 次':r.until?' · 截至 '+r.until:''));

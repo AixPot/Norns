@@ -13,7 +13,7 @@ export async function api<T>(path:string,method='GET',body?:unknown,signal?:Abor
  const response=await request(path,method,body,signal);
  if(token!==generation)throw Object.assign(new Error('身份已切换，旧响应已忽略'),{stale:true});
  if(response.status===204)return undefined as T;
- const result=await response.json().catch(()=>({message:'服务器响应异常'}));
+ const text=await response.text();let result:any;try{result=JSON.parse(text)}catch{if(response.ok)throw new Error('服务器响应无法解析，请只读核对');result={message:text||'服务器响应异常'}}
  if(token!==generation)throw Object.assign(new Error('身份已切换，旧响应已忽略'),{stale:true});
  if(response.status===401)unauthorized?.();
  if(!response.ok)throw new ApiError(response.status,result.message||'操作失败，请重试',result.code||'');

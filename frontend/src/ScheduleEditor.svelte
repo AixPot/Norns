@@ -1,13 +1,13 @@
 <script lang="ts">
  import type {ScheduleDraft} from './types';
  import {scheduleDraft,scheduleValidation} from './schedule-draft.mjs';
- let {value,completed,onchange,onblur}:{value:ScheduleDraft;completed:boolean;onchange:()=>void;onblur:(event?:FocusEvent)=>void}=$props();
+ let {value,completed,skipped=false,onchange,onblur}:{value:ScheduleDraft;completed:boolean;skipped?:boolean;onchange:()=>void;onblur:(event?:FocusEvent)=>void}=$props();
  // Svelte 5.57 maps empty number inputs to null. Recovery's editor contract
  // deliberately encodes undefined; normalize only that DOM sentinel, not invalid numbers.
  const message=$derived(scheduleValidation(value));
 </script>
 <section class="task-editor schedule-editor" data-editor="schedule"><h3>日期与重复</h3><p class="muted">Asia/Shanghai · 无通知。留空时间即全天；结束日期可选。</p>
-{#if completed}<p role="status">请先撤销完成，再修改日期或重复规则。</p>{/if}
+{#if completed}<p role="status">请先撤销{skipped?'跳过':'完成'}，再修改日期或重复规则。</p>{/if}
 <form onsubmit={e=>{e.preventDefault();onblur()}} oninput={()=>{value.enabled=true;onchange()}} onchange={()=>{value.enabled=true;onchange()}} onfocusout={onblur}><fieldset disabled={completed} style="border:0;padding:0;margin:0;min-width:0;display:flex;flex-direction:column;gap:12px">
  <div class="move-fields"><label>开始日期<input aria-label="开始日期" type="date" required bind:value={value.start}/></label><label>开始时间<input aria-label="开始时间" type="time" bind:value={value.startTime}/></label><label>结束日期<input aria-label="结束日期" type="date" bind:value={value.end}/></label><label>结束时间<input aria-label="结束时间" type="time" bind:value={value.endTime}/></label></div>
  <label>重复<select aria-label="重复" bind:value={value.unit}><option value="">不重复</option><option value="day">每天 / 每 N 天</option><option value="week">每周 / 每 N 周</option><option value="month">每月 / 每 N 月</option><option value="year">每年</option></select></label>

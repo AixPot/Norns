@@ -31,6 +31,7 @@ export function bulkChanges(board,input){
  return changes;
 }
 export function bulkSafety(cards,changes){
+ if(cards.some(c=>c.skipped)&&(changes.completed?.op==='set'||changes.schedule&&changes.schedule.op!=='keep'))return '已跳过任务不能完成、撤销完成或修改日期；请先单独撤销跳过。';
  if(changes.schedule&&changes.schedule.op!=='keep'&&cards.some(c=>c.completed||c.series_id||c.schedule?.repeat))return '日期仅可修改未完成且非重复的原任务；同时撤销完成也不能绕过限制。';
  if(changes.completed?.op==='set'){
   if(cards.some(c=>c.archived))return '归档任务不能完成或撤销完成；同时恢复归档也不能绕过限制。请先单独恢复。';

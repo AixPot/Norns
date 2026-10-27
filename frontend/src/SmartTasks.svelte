@@ -1,5 +1,5 @@
 <script lang="ts">
- import {completionRows,completionLayout} from "./completion-motion.mjs";
+ import {completionRows,completionLayout,completionAppearance} from "./completion-motion.mjs";
  import {untrack as selectionUntrack} from 'svelte';
  import type {SelectionProps} from './types';
  import TaskCapture,{captureLeaveGuard} from './TaskCapture.svelte';
@@ -15,7 +15,7 @@
  const projectionOptions=$derived({route,today,...display});
  const projection=$derived(projectTaskView(completionRows([...rows,...completed],completionMotion),projectionOptions));
  const groups=$derived(projection.groups);
- $effect(()=>{const scope=`smart:${accountId}:${route}`,visible=[...rows,...(expanded?completed:[])].map(t=>({id:t.id,board_id:t.board_id}));selectionUntrack(()=>onvisible?.(scope,visible))});
+ $effect(()=>{const scope=`smart:${accountId}:${route}`,visible=[...rows,...(expanded?completed:[])].filter(t=>!t.skipped).map(t=>({id:t.id,board_id:t.board_id}));selectionUntrack(()=>onvisible?.(scope,visible))});
  const query=$derived(taskQuery(smartFilters(route,inboxId)));
  $effect(()=>{void refresh;void expanded;if(route==='inbox'&&!inboxId)return;loading=true;void loader.load(query)});
  onMount(()=>{const resume=()=>{if(!document.hidden)void loader.load(query)};const timer=setInterval(resume,15000);document.addEventListener('visibilitychange',resume);return()=>{loader.stop();clearInterval(timer);document.removeEventListener('visibilitychange',resume)}});
@@ -27,7 +27,7 @@
  export function hasPending(){return capture?.hasPending()??false}
 </script>
 <section class="smart-tasks" use:completionLayout aria-label={labels[route]}>
- <header class="smart-heading"><h1>{labels[route]}</h1><p class="smart-summary" role="status">{loading?'正在查询…':message||`${rows.length} 个未完成任务`}{route==='inbox'?' · 仅你可见':''}</p><ViewOptions value={display} owner={`${accountId}:smart:${route}`} onchange={ondisplay}/></header>
+ <header class="smart-heading"><h1>{labels[route]}</h1><p class="smart-summary" role="status">{loading?'正在查询…':message||`${rows.filter(t=>!t.skipped&&!t.completed).length} 个未完成任务`}{route==='inbox'?' · 仅你可见':''}</p><ViewOptions value={display} owner={`${accountId}:smart:${route}`} onchange={ondisplay}/></header>
  <TaskCapture {ontemplate} {recovery} {unknown} scope={inboxId&&inboxList?{kind:'capture',boardId:inboxId,listId:inboxList}:null} bind:this={capture} label="添加到收集箱" placeholder="添加到私人收集箱…" onsave={onquick}/>
  <div class="smart-results">
  {#each groups as group (group.key)}
@@ -41,12 +41,13 @@
 </section>
 {#snippet row(task:TaskResult)}
  {@const date=cardSchedule(task,new Date())}
+ {@const appearance=completionAppearance(completionMotion.find(e=>e.id===task.id))}
  {@const end=task.schedule?.end_date||task.schedule?.start_date||task.due_date}
- <div class="smart-row" class:task-done={task.completed} data-task-id={task.id} data-completion-id={task.id} data-completion-phase={completionMotion.find(e=>e.id===task.id)?.phase||''}>
+ <div class="smart-row" class:task-done={appearance.checked??task.completed} data-task-id={task.id} data-completion-id={task.id} data-completion-phase={completionMotion.find(e=>e.id===task.id)?.phase||''}>
   {#if selecting}<label class="bulk-check"><input type="checkbox" aria-label={`选择 ${task.title}`} checked={selected.some(s=>s.id===task.id)} onchange={()=>onselect?.({id:task.id,board_id:task.board_id})}/><span>选择</span></label>{/if}
-  <label class="smart-check"><input type="checkbox" aria-label={`${task.completed?'撤销完成':'完成'} ${task.title}`} checked={completionMotion.find(e=>e.id===task.id)?.target??task.completed} aria-busy={pendingCards.includes(task.id)} disabled={pendingCards.includes(task.id)||completionMotion.some(e=>e.id===task.id)} title={pendingCards.includes(task.id)?'正在保存完成状态，尚未确认':undefined} onchange={async e=>{const el=e.currentTarget;if(!await oncomplete(task))el.checked=task.completed}}/>{#if pendingCards.includes(task.id)}<span class="completion-pending" role="status">保存中</span>{/if}</label>
+  <label class="smart-check"><input type="checkbox" aria-label={`${task.completed?'撤销完成':'完成'} ${task.title}`} checked={appearance.checked??task.completed} aria-busy={appearance.busy} disabled={pendingCards.includes(task.id)||completionMotion.some(e=>e.id===task.id)} title={pendingCards.includes(task.id)?'正在保存完成状态，尚未确认':undefined} onchange={async e=>{const el=e.currentTarget;el.checked=task.completed;if(!await oncomplete(task))el.checked=task.completed}}/></label>
   <button class="task-result" onclick={e=>onopen(task,e.currentTarget)}>
-   <span class="task-words"><strong>{task.title}</strong><span class="task-source">{task.board_id===inboxId?'私人收集箱':task.board_title+' / '+task.list_title}{task.assignee_name?' · '+task.assignee_name:''}</span></span>
+   <span class="task-words"><strong>{task.title}</strong>{#if appearance.label}<span class="completion-status" data-completion-phase={appearance.phase}>{#if appearance.seal}<span class="completion-seal" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>{/if}<span>{appearance.label}</span></span>{/if}<span class="task-source">{task.board_id===inboxId?'私人收集箱':task.board_title+' / '+task.list_title}{task.assignee_name?' · '+task.assignee_name:''}</span></span>
    {#if date}<span class="card-schedule" class:overdue={!task.completed&&!!end&&end<today} title={date.title}>{date.label}</span>{/if}
   </button>
  </div>
