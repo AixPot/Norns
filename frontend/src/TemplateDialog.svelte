@@ -52,7 +52,7 @@
  {#if selected}
  {#if target}<section aria-label="模板内容预览"><h3>{selected.title}</h3><p class="template-body">{selected.description||'无描述'}</p><ol>{#each selected.checklist as item}<li>{item.title}</li>{/each}</ol><p>模板版本 {selected.revision} · 新任务和条目使用新 ID，全部未完成。</p></section>
  {#if !target.board.inbox_owner_id}<label class="template-ack"><input type="checkbox" aria-label="确认共享模板内容" bind:checked={ack} disabled={working}/>我确认将以上私人内容复制到此普通看板，允许当前及未来成员查看。</label>{/if}
- <CreationDate route={target.route} bind:value={choice}/><button class="primary" disabled={working||loading||blocked||(!target.board.inbox_owner_id&&!ack)} onclick={()=>write('apply')}>确认从模板创建</button>
+ {#if target.route==='today'||target.route==='tomorrow'||target.route==='next7'}<CreationDate route={target.route} bind:value={choice}/>{/if}<button class="primary" disabled={working||loading||blocked||(!target.board.inbox_owner_id&&!ack)} onclick={()=>write('apply')}>确认从模板创建</button>
  {:else}
  <fieldset disabled={working||loading}><legend>编辑私人副本 · v{selected.revision}</legend>
  <label>名称<input aria-label="编辑模板名称" bind:value={selected.name} oninput={()=>dirty=true}/></label><label>任务标题<input aria-label="模板任务标题" bind:value={selected.title} oninput={()=>dirty=true}/></label><label>描述<textarea aria-label="模板描述" bind:value={selected.description} oninput={()=>dirty=true} rows="4"></textarea></label>

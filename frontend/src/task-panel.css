@@ -14,11 +14,15 @@
 @media(max-width:640px){.card-content{min-height:48px}.task-toolbar{gap:2px}.task-toolbar .tool-button{width:36px}.task-panel .content-title{font-size:20px}.task-panel .content-description{font-size:16px}.task-panel-bottom{padding-bottom:max(6px,env(safe-area-inset-bottom))}}
 
 /* One flat row surface, separate native completion and detail controls. */
-.board-scroll .card{gap:0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;box-shadow:none;align-items:stretch}
-.card:hover,.card:focus-within{background:var(--surface-muted)}
-.card .card-content{border:0;border-radius:0;background:transparent;box-shadow:none;padding:10px 8px 10px 0}
+.board-scroll .card{gap:0;border:0;border-radius:6px;background:transparent;box-shadow:none;align-items:stretch}
+.board-scroll .card:hover,.board-scroll .card:focus-within{background:var(--surface-muted);box-shadow:none}
+/* Share the row radius with detail focus rings; children never paint a second surface. */
+.board-scroll .card,.smart-row{--task-row-radius:6px;border-radius:var(--task-row-radius)}
+.card .card-content{border:0;border-radius:var(--task-row-radius,6px);background:transparent;box-shadow:none;padding:10px 8px 10px 0}
+.smart-row .task-result{border-radius:var(--task-row-radius)}
 .card .card-content:hover{background:transparent;box-shadow:none;transform:none}
 .card-completion,.smart-check{display:flex;align-items:center;justify-content:center;align-self:stretch;min-width:44px;min-height:44px;width:44px;height:auto;padding:0;margin:0;background:transparent;box-shadow:none;border-radius:0}
+.board-scroll .card .card-completion{flex-direction:row;align-items:flex-start;padding-top:12px}
 .card-completion input,.smart-check input{appearance:none;width:18px;height:18px;min-height:18px;flex:none;margin:0;padding:0;border:1.5px solid var(--border-strong);border-radius:3px;background:var(--surface);box-shadow:none;cursor:pointer}
 .card-completion input:checked,.smart-check input:checked{background:var(--accent);border-color:var(--accent);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='m4 9 3 3 7-7' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E")}
 .card-completion input:focus-visible,.smart-check input:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
