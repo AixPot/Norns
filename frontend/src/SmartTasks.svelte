@@ -1,6 +1,7 @@
 <script lang="ts">
  import {completionRows,completionLayout,completionAppearance} from "./completion-motion.mjs";
  import {untrack as selectionUntrack} from 'svelte';
+ import type {Snippet} from 'svelte';
  import type {SelectionProps} from './types';
  import TaskCapture,{captureLeaveGuard} from './TaskCapture.svelte';
  import type {Schedule} from './types';
@@ -8,7 +9,7 @@
  import ViewOptions from './ViewOptions.svelte';
  import type {ViewPreferences} from './types';
  import {onMount} from 'svelte';import {api} from './api';import {createTaskLoader,taskQuery} from './task-discovery.mjs';import {smartFilters} from './navigation.mjs';import {cardSchedule} from './card-schedule.mjs';import type {TaskResult,TaskDiscoveryResponse} from './types';
- let {completionMotion=[],selecting=false,selected=[],onselect,onvisible,ontemplate,accountId,display,ondisplay,recovery,unknown=false,inboxList,route,inboxId,refresh=0,pendingCards=[],onopen,oncomplete,onquick,onmetadata,onerror}:SelectionProps & {completionMotion?:any[];ontemplate?:(restore:()=>void)=>void;accountId:number;display:ViewPreferences;ondisplay:(value:ViewPreferences)=>void;recovery?:any;unknown?:boolean;inboxList:number;route:string;inboxId:number;refresh?:number;pendingCards?:number[];onopen:(task:TaskResult,anchor:HTMLElement)=>void;oncomplete:(task:TaskResult)=>Promise<boolean>;onquick:(title:string,schedule?:Schedule)=>Promise<boolean>;onmetadata:(d:TaskDiscoveryResponse)=>void;onerror:(e:unknown)=>void}=$props();
+ let {selectionControls,completionMotion=[],selecting=false,selected=[],onselect,onvisible,ontemplate,accountId,display,ondisplay,recovery,unknown=false,inboxList,route,inboxId,refresh=0,pendingCards=[],onopen,oncomplete,onquick,onmetadata,onerror}:SelectionProps & {selectionControls?:Snippet;completionMotion?:any[];ontemplate?:(restore:()=>void)=>void;accountId:number;display:ViewPreferences;ondisplay:(value:ViewPreferences)=>void;recovery?:any;unknown?:boolean;inboxList:number;route:string;inboxId:number;refresh?:number;pendingCards?:number[];onopen:(task:TaskResult,anchor:HTMLElement)=>void;oncomplete:(task:TaskResult)=>Promise<boolean>;onquick:(title:string,schedule?:Schedule)=>Promise<boolean>;onmetadata:(d:TaskDiscoveryResponse)=>void;onerror:(e:unknown)=>void}=$props();
  let rows=$state<TaskResult[]>([]),completed=$state<TaskResult[]>([]),expanded=$state(false),loading=$state(true),message=$state(''),today=$state(new Date(Date.now()+8*3600000).toISOString().slice(0,10));
  const labels:Record<string,string>={today:'今天',tomorrow:'明天',next7:'最近七天',mine:'指派给我',inbox:'收集箱'};
  const loader=createTaskLoader({read:async(q:string)=>{const data=await api<TaskDiscoveryResponse>('/tasks?'+q);let done:TaskResult[]=[];if(expanded){const params=new URLSearchParams(q);params.set('status','complete');done=(await api<TaskDiscoveryResponse>('/tasks?'+params)).tasks}return {data,done}},apply:({data,done}:{data:TaskDiscoveryResponse;done:TaskResult[]})=>{rows=data.tasks;completed=done;today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);onmetadata(data);loading=false;message=''},onerror:(e:unknown)=>{rows=[];completed=[];loading=false;message=e instanceof Error?e.message:'查询失败';onerror(e)}});
@@ -28,8 +29,9 @@
  export function hasPending(){return capture?.hasPending()??false}
 </script>
 <section class="smart-tasks" use:completionLayout aria-label={labels[route]}>
- <header class="smart-heading"><h1>{labels[route]}</h1><p class="smart-summary" role="status">{loading?'正在查询…':message||`${rows.filter(t=>!t.skipped&&!t.completed).length} 个未完成任务`}{route==='inbox'?' · 仅你可见':''}</p><ViewOptions value={display} owner={`${accountId}:smart:${route}`} onchange={ondisplay}/></header>
- <TaskCapture {route} {ontemplate} {recovery} {unknown} scope={inboxId&&inboxList?{kind:'capture',boardId:inboxId,listId:inboxList}:null} bind:this={capture} label="添加到收集箱" placeholder="添加到私人收集箱…" onsave={onquick}/>
+ <header class="smart-heading"><h1>{labels[route]}</h1><p class="smart-summary" role="status">{loading?'正在查询…':message||`${rows.filter(t=>!t.skipped&&!t.completed).length} 个未完成任务`}{route==='inbox'?' · 仅你可见':''}</p></header>
+ <TaskCapture {route} {ontemplate} {recovery} {unknown} scope={inboxId&&inboxList?{kind:'capture',boardId:inboxId,listId:inboxList}:null} bind:this={capture} label="添加到收集箱" onsave={onquick}/>
+ <div class="smart-toolbar"><div class="selection-toolbar">{@render selectionControls?.()}</div><ViewOptions value={display} owner={`${accountId}:smart:${route}`} onchange={ondisplay}/></div>
  <div class="smart-results">
  {#each groups as group (group.key)}
   {#if group.label}<section class="task-date-group" data-group={group.key} aria-label={group.label}><h2 class:overdue={group.key==='overdue'}>{group.label}<span>{group.tasks.length}</span></h2>{#each group.tasks as task (task.id)}{@render row(task)}{/each}</section>

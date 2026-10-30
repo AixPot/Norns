@@ -9,3 +9,9 @@ export function captureContext(route,explicit,choice='',now=new Date()){
  const outside=!!start&&(route==='today'?!(start<=today&&end>=today):route==='tomorrow'?!(start<=day(1)&&end>=day(1)):route==='next7'?!(start<=day(6)&&end>=today):false);
  return {schedule,dates,needsChoice,outside,notice:outside?`已保存到私人收集箱 · ${start}，不在当前日期视图；可去收集箱或对应日期查看。`:''};
 }
+
+// Mirror creation precedence without freezing submit-time today/tomorrow defaults.
+export function captureDateLabel(route,explicit,choice=''){
+ const date=explicit?.start_date||choice;
+ return date?`日期 · ${date}`:route==='today'?'日期 · 今天':route==='tomorrow'?'日期 · 明天':'选择日期';
+}
