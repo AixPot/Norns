@@ -29,31 +29,35 @@ try{
  const card=n=>p.getByRole('group',{name:n,exact:true}),box=n=>card(n).getByRole('checkbox'),toast=p.getByRole('region',{name:'最近完成的任务'});
  const order=()=>p.locator('.card').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')));
  async function shown(expected){await p.waitForFunction(expected=>JSON.stringify([...document.querySelectorAll('.card')].map(e=>e.getAttribute('aria-label')))===JSON.stringify(expected),expected)}
- async function complete(n){await box(n).check();await toast.getByText(n,{exact:true}).waitFor()}
+ async function complete(n){await box(n).click();await toast.getByText(n,{exact:true}).waitFor()}
  const positions=b.cards.map(c=>[c.id,c.position]);
  // A committed response is deliberately held; feedback waits for acknowledgement.
  let release,started;let gate=new Promise(r=>release=r),held=new Promise(r=>started=r);let posts=[];
  await p.route('**/api/boards/2/mutate',async route=>{const data=route.request().postDataJSON();posts.push(data);const response=await route.fetch();if(posts.length===1){started();await gate}await route.fulfill({response})});
- await box('B').check();await held;assert.equal(await toast.count(),0);assert.equal(await box('B').isDisabled(),true);
- await box('A').check();await box('C').check();release();await toast.getByText('C',{exact:true}).waitFor();await shown(['D','A','B','C']);
+ await box('B').click();await held;assert.equal(await toast.count(),0);assert.equal(await box('B').isDisabled(),true);assert.equal(await box('B').isChecked(),false);assert.equal((await snapshot(p)).cards.find(c=>c.title==='B').completed,true,'held response already committed but is not yet UI success');
+ await box('A').click();await box('C').click();release();await toast.getByText('C',{exact:true}).waitFor();await shown(['D','A','B','C']);
  assert.deepEqual((await snapshot(p)).cards.map(c=>[c.id,c.position]),positions);assert.equal(posts.length,3);for(let i=1;i<3;i++)assert.equal(posts[i].expected_revision,posts[i-1].expected_revision+1);
  await p.unrouteAll({behavior:'wait'});
  await toast.getByRole('button',{name:'撤销',exact:true}).click();await shown(['C','D','A','B']);assert.equal((await snapshot(p)).cards.find(c=>c.title==='C').completed,false);
  await p.reload();await p.getByRole('button',{name:/Completion display synthetic/}).click();await shown(['C','D','A','B']);checks.push('three rapid queued completions, stable physical order, only latest acknowledged toast, undo exact latest, refresh preserves grouping');
  // Older timeout must not close a newer completion. Fake clock is installed only after startup.
  await p.clock.install();await complete('C');await p.clock.runFor(6000);await complete('D');await p.clock.runFor(4001);assert.equal(await toast.count(),1);assert.equal(await toast.getByText('D',{exact:true}).count(),1);await p.clock.runFor(5998);assert.equal(await toast.count(),1);await p.clock.runFor(2);await toast.waitFor({state:'hidden'});assert.equal(await toast.count(),0);
- await box('D').uncheck();await shown(['D','A','B','C']);checks.push('fake clock: replacement resets 10 seconds, older timer harmless, expiry leaves normal cancellation available');
+ await box('D').click();await shown(['D','A','B','C']);checks.push('fake clock: replacement resets 10 seconds, older timer harmless, expiry leaves normal cancellation available');
  // Exact undo is captured even if another queued success replaces the toast while undo waits.
- await box('C').uncheck();await shown(['C','D','A','B']);await complete('C');
+ await box('C').click();await shown(['C','D','A','B']);await complete('C');
  posts=[];gate=new Promise(r=>release=r);held=new Promise(r=>started=r);
  await p.route('**/api/boards/2/mutate',async route=>{posts.push(route.request().postDataJSON());const response=await route.fetch();if(posts.length===1){started();await gate}await route.fulfill({response})});
- await box('D').check();await held;await toast.getByRole('button',{name:'撤销',exact:true}).click();assert.equal(await toast.getByRole('button',{name:'撤销中…',exact:true}).isDisabled(),true);release();await shown(['C','A','B','D']);assert.deepEqual(posts.map(x=>[x.card_id,x.completed]),[[4,true],[3,false]]);assert.equal(await toast.getByText('D',{exact:true}).count(),1);await p.unrouteAll({behavior:'wait'});checks.push('undo captured C while D completion pending; D replaces toast but is not undone; queue CAS maintained');
+ await box('D').click();await held;await toast.getByRole('button',{name:'撤销',exact:true}).click();assert.equal(await toast.getByRole('button',{name:'撤销中…',exact:true}).isDisabled(),true);release();await shown(['C','A','B','D']);assert.deepEqual(posts.map(x=>[x.card_id,x.completed]),[[4,true],[3,false]]);assert.equal(await toast.getByText('D',{exact:true}).count(),1);await p.unrouteAll({behavior:'wait'});checks.push('undo captured C while D completion pending; D replaces toast but is not undone; queue CAS maintained');
  await toast.getByRole('button',{name:'关闭完成提示'}).click();assert.equal(await toast.count(),0);
  // Move menu maps named visual anchors to physical indices; undo follows newest real move.
- await card('B').locator('.card-content').click();await p.getByRole('button',{name:'移动卡片',exact:true}).click();await p.getByLabel('插入位置',{exact:true}).selectOption({label:'列表末尾（同完成分组内）'});await p.getByRole('button',{name:'移动到此位置',exact:true}).click();await p.getByRole('button',{name:'关闭卡片',exact:true}).click();await p.getByRole('dialog').waitFor({state:'hidden'});await box('B').uncheck();await shown(['C','B','A','D']);checks.push('named move menu physical index mapping, cancellation follows latest true position rather than stale saved array');
+ await card('B').locator('.card-content').click();await p.getByRole('button',{name:'移动卡片',exact:true}).click();await p.getByLabel('插入位置',{exact:true}).selectOption({label:'列表末尾（同完成分组内）'});await p.getByRole('button',{name:'移动到此位置',exact:true}).click();await p.getByRole('button',{name:'关闭卡片',exact:true}).click();await p.getByRole('dialog').waitFor({state:'hidden'});await box('B').click();await shown(['C','B','A','D']);checks.push('named move menu physical index mapping, cancellation follows latest true position rather than stale saved array');
  // First completion click after text blur saves text and shares feedback with detail.
  await card('C').locator('.card-content').click();await p.getByLabel('描述',{exact:true}).fill('edited before complete');await p.getByRole('button',{name:'完成任务',exact:true}).click();await toast.getByText('C',{exact:true}).waitFor();assert.equal((await snapshot(p)).cards.find(c=>c.title==='C').description,'edited before complete');await toast.getByRole('button',{name:'撤销',exact:true}).click();await p.getByRole('button',{name:'完成任务',exact:true}).waitFor();await p.getByRole('button',{name:'关闭卡片',exact:true}).click();checks.push('detail edit blur first-click completion and shared toast undo through autosave writer');
  // A real mouse gesture before C resolves a same-group identity, not a visual index.
+ // Coordinate gestures do not get locator.click()'s animation-stability check.
+ // Undo has restored DOM order before completionLayout's FLIP has settled.
+ await p.waitForFunction(()=>[...document.querySelectorAll('.board-scroll .card')].every(node=>
+  !node.dataset.completionPhase&&node.getAnimations({subtree:true}).every(animation=>animation.playState!=='running'&&animation.playState!=='pending')));
  const from=await card('B').locator('.card-content').boundingBox();await p.mouse.move(from.x+40,from.y+20);await p.mouse.down();await p.mouse.move(from.x+48,from.y+20,{steps:3});await p.locator('.board-drag-ghost').waitFor();await p.clock.runFor(20);const to=await card('C').boundingBox();await p.mouse.move(to.x+40,to.y+3,{steps:10});await p.clock.runFor(20);assert.equal(await p.locator('.drag-placeholder').count(),1);await p.mouse.up();await waitBoard(p,b=>b.cards.find(c=>c.title==='B').position===1);await shown(['B','C','A','D']);checks.push('real mouse drag same-group identity maps grouped display to persisted index');
  // Safe recurrence cancellation and sticky touched-successor refusal via toast.
  b=await snapshot(p);const cid=b.cards.find(c=>c.title==='C').id;
@@ -66,13 +70,13 @@ try{
  await toast.getByRole('button',{name:'关闭完成提示'}).click();
  let navRelease,navStarted;const navGate=new Promise(r=>navRelease=r),navHeld=new Promise(r=>navStarted=r);
  await p.route('**/api/boards/2/mutate',async route=>{const response=await route.fetch();navStarted();await navGate;await route.fulfill({response})});
- await box('B').check();await navHeld;await p.getByRole('button',{name:'← 今天',exact:true}).click();navRelease();
+ await box('B').click();await navHeld;await p.getByRole('button',{name:'← 今天',exact:true}).click();navRelease();
  await p.getByRole('heading',{name:'今天',exact:true}).waitFor();assert.equal(await toast.count(),0);await p.unrouteAll({behavior:'wait'});await p.getByRole('button',{name:/Completion display synthetic/}).click();assert.equal(await toast.count(),0);
- await box('B').uncheck();await box('B').check();await toast.getByText('B',{exact:true}).waitFor();
+ await box('B').click();await box('B').click();await toast.getByText('B',{exact:true}).waitFor();
  await p.getByRole('button',{name:'← 今天',exact:true}).click();await p.getByRole('heading',{name:'今天',exact:true}).waitFor();assert.equal(await toast.count(),0);await p.getByRole('button',{name:/Completion display synthetic/}).click();assert.equal(await toast.count(),0);
- await box('B').uncheck();await waitBoard(p,b=>!b.cards.find(c=>c.title==='B').completed);
+ await box('B').click();await waitBoard(p,b=>!b.cards.find(c=>c.title==='B').completed);
  // A cancellation elsewhere must clear stale feedback, not toggle the task back on.
- await box('B').check();await toast.getByText('B',{exact:true}).waitFor();await action(p,{action:'card_complete',card_id:2,completed:false});await p.clock.runFor(3000);await toast.waitFor({state:'hidden'});assert.equal((await snapshot(p)).cards.find(c=>c.id===2).completed,false);
+ await box('B').click();await toast.getByText('B',{exact:true}).waitFor();await action(p,{action:'card_complete',card_id:2,completed:false});await p.clock.runFor(3000);await toast.waitFor({state:'hidden'});assert.equal((await snapshot(p)).cards.find(c=>c.id===2).completed,false);
  checks.push('held acknowledgement drains before navigation; no feedback survives re-entry; remote cancellation clears stale undo');
  await p.screenshot({path:evidence+'/desktop.png'});
  // Narrow mobile detail: toast inside focus scope, above fixed bottom operations.

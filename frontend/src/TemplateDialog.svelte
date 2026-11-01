@@ -16,6 +16,12 @@
  function error(e:unknown,write=false){if((e as any)?.stale||(e as any)?.name==='AbortError')return;if(write&&unknownOutcome(e)){blocked=true;onunknown();message='写入结果未知，已阻止重复发送。请只读核对模板库和目标任务；关闭后也不会自动重放。';return}if(e instanceof ApiError&&e.status===409){blocked=true;message='版本已变化，输入已保留。请明确重新读取并核对，再作新决定；不会自动重试。';return}message=e instanceof Error?e.message:'操作失败，输入已保留'}
  async function list(){const {token,signal}=begin();loading=true;try{const rows=await api<TemplateSummary[]>('/templates','GET',undefined,signal);if(current(token))summaries=rows}catch(e){if(current(token))error(e)}finally{if(current(token))loading=false}}
  async function choose(id:number){if(working)return;if(dirty&&!confirm('放弃当前未保存的模板编辑，读取所选版本？'))return;const {token,signal}=begin();loading=true;try{const t=await api<TaskTemplate>(`/templates/${id}`,'GET',undefined,signal);if(current(token)){selected=t;dirty=false;ack=false;blocked=false;message=''}}catch(e){if(current(token))error(e)}finally{if(current(token))loading=false}}
+ // An acknowledged mutation is no longer pending; summary refresh is a disposable read.
+ async function refreshAfterWrite(token:number,signal:AbortSignal){
+  working=false;loading=true;
+  try{const rows=await api<TemplateSummary[]>('/templates','GET',undefined,signal);if(current(token))summaries=rows}
+  catch(e){if(current(token))error(e)}finally{if(current(token))loading=false}
+ }
  async function write(kind:'create'|'update'|'delete'|'apply'){
   if(working||blocked)return;
   if(kind==='delete'&&!confirm('删除这个私人模板？已有任务不会改变。'))return;
@@ -23,8 +29,8 @@
   const {token,signal}=begin();working=true;message='';
   try{
    if(kind==='apply'){if(!selected||!target)return;const notice=await onapply(selected,ack,choice);if(current(token)){message=notice||'已从模板创建新任务；模板本身未改变。';blocked=true}}
-   else if(kind==='create'){if(!source||created)return;onpending();await api<TaskTemplate>('/templates','POST',sourceTemplate(source.board,source.draft,name),signal);if(current(token)){onknown();created=true;message='私人模板已保存。';summaries=await api<TemplateSummary[]>('/templates','GET',undefined,signal)}}
-   else if(selected){if(kind==='update'){const t=await api<TaskTemplate>(`/templates/${selected.id}`,'PATCH',templateReplacement(selected),signal);if(current(token)){selected=t;dirty=false;message='模板已保存，已有任务未改变。'}}else{await api(`/templates/${selected.id}`,'DELETE',{expected_revision:selected.revision},signal);if(current(token)){selected=null;dirty=false;message='模板已删除，已有任务未改变。'}}if(current(token)){const rows=await api<TemplateSummary[]>('/templates','GET',undefined,signal);if(current(token))summaries=rows}}
+   else if(kind==='create'){if(!source||created)return;onpending();await api<TaskTemplate>('/templates','POST',sourceTemplate(source.board,source.draft,name),signal);if(current(token)){onknown();created=true;message='私人模板已保存。';await refreshAfterWrite(token,signal)}}
+   else if(selected){if(kind==='update'){const t=await api<TaskTemplate>(`/templates/${selected.id}`,'PATCH',templateReplacement(selected),signal);if(current(token)){selected=t;dirty=false;message='模板已保存，已有任务未改变。'}}else{await api(`/templates/${selected.id}`,'DELETE',{expected_revision:selected.revision},signal);if(current(token)){selected=null;dirty=false;message='模板已删除，已有任务未改变。'}}if(current(token))await refreshAfterWrite(token,signal)}
   }catch(e){if(current(token)){if(kind==='create'&&!unknownOutcome(e))onknown();if(kind==='create'&&unknownOutcome(e))created=true;error(e,true)}}finally{if(current(token))working=false}
  }
  // Read live modal state synchronously; disposed instances cannot warn for a new owner.
