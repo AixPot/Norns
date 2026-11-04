@@ -78,3 +78,15 @@ test('wide and narrow preferences independently inherit v1 until explicitly chan
  assert.deepEqual(JSON.parse(s.values.get('norns.view-preferences.v2.account.1.smart.today.narrow')),{version:2,group:'none',sort:'manual'});
  const denied=createViewPreferences({accountId:1,storage:null});denied.set(scope,{group:'date',sort:'date'},'narrow');assert.deepEqual(denied.get(scope,'wide'),defaults);
 });
+test('inbox detail mode defaults to drawer, persists per account and tolerates denied storage',async()=>{
+ const {createViewPreferences}=await import('../src/view-preferences.mjs');
+ const s=storage(),p=createViewPreferences({accountId:1,storage:s});
+ assert.equal(p.inboxDetail(),'drawer');assert.equal(p.setInboxDetail('split'),true);
+ assert.equal(createViewPreferences({accountId:1,storage:s}).inboxDetail(),'split');
+ assert.equal(createViewPreferences({accountId:2,storage:s}).inboxDetail(),'drawer');
+ assert.equal(p.setInboxDetail('oops'),false);assert.equal(p.inboxDetail(),'split');
+ const denied=createViewPreferences({accountId:1,storage:{getItem(){throw Error()},setItem(){throw Error()}}});
+ assert.equal(denied.setInboxDetail('split'),true);assert.equal(denied.inboxDetail(),'split');
+ assert.equal(createViewPreferences({accountId:0,storage:s}).setInboxDetail('split'),false);
+ assert.deepEqual(p.get(scope,'wide'),defaults);
+});

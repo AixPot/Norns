@@ -10,8 +10,8 @@
  import Attachments from './Attachments.svelte';
  import {positionPanel} from './panel-position.mjs';
  import type {Board,Draft,Card} from './types';
- type Props={onskip?:()=>Promise<void>;onhistory?:()=>Promise<void>;onunskip?:()=>Promise<void>;completionEntry?:any;completionPhase?:string;positionDisabled?:boolean;suspended?:boolean;detailRecovery?:any;recoveryHold?:boolean;recoveryReview?:boolean;recoveryMessage?:string;onrestore:()=>void;ondiscard:()=>void;onconfirmsave:()=>void;onauxiliary:(value:any)=>void;onuncertain:()=>void;onsavetemplate?:()=>Promise<void>;ontransfer?:()=>Promise<void>;feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
- let {onskip,onhistory,onunskip,completionEntry,completionPhase='',positionDisabled=false,suspended=false,detailRecovery,recoveryHold=false,recoveryReview=false,recoveryMessage='',onrestore,ondiscard,onconfirmsave,onauxiliary,onuncertain,ontransfer,onsavetemplate,feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
+ type Props={split?:boolean;onskip?:()=>Promise<void>;onhistory?:()=>Promise<void>;onunskip?:()=>Promise<void>;completionEntry?:any;completionPhase?:string;positionDisabled?:boolean;suspended?:boolean;detailRecovery?:any;recoveryHold?:boolean;recoveryReview?:boolean;recoveryMessage?:string;onrestore:()=>void;ondiscard:()=>void;onconfirmsave:()=>void;onauxiliary:(value:any)=>void;onuncertain:()=>void;onsavetemplate?:()=>Promise<void>;ontransfer?:()=>Promise<void>;feedback?:Snippet;draft:Draft;board:Board;busy:boolean;anchor:HTMLElement|null;saveState:string;saveError:string;review:Board|null;userId:number;onclose:()=>void;onchange:(immediate?:boolean)=>void;onblur:()=>Promise<boolean>;oncomposition:(active:boolean)=>void;onretry:()=>void;onreview:()=>void;onrebase:()=>void;oncancelreview:()=>void;onaction:(data:Record<string,unknown>)=>Promise<boolean>};
+ let {split=false,onskip,onhistory,onunskip,completionEntry,completionPhase='',positionDisabled=false,suspended=false,detailRecovery,recoveryHold=false,recoveryReview=false,recoveryMessage='',onrestore,ondiscard,onconfirmsave,onauxiliary,onuncertain,ontransfer,onsavetemplate,feedback,draft,board,busy,anchor,saveState,saveError,review,userId,onclose,onchange,onblur,oncomposition,onretry,onreview,onrebase,oncancelreview,onaction}:Props=$props();
  const appearance=$derived.by(()=>{void completionPhase;return completionAppearance(completionEntry)});
  let panel:HTMLDivElement,body:HTMLDivElement;let auxiliaryComposition=$state(false);let lastEditor:HTMLElement|undefined;
  let returnSelection:{node:HTMLInputElement|HTMLTextAreaElement;start:number|null;end:number|null;direction:string|null}|undefined;
@@ -19,7 +19,7 @@
  export function resumeFocus(){if(lastEditor?.isConnected){lastEditor.focus({preventScroll:true});if(returnSelection?.node===lastEditor){try{returnSelection.node.setSelectionRange(returnSelection.start,returnSelection.end,returnSelection.direction as any)}catch{}returnSelection=undefined}}else panel?.focus({preventScroll:true})}
  export function overlayReady(){return !composing&&!auxiliaryComposition&&!actionPending&&!transferPending}
 
- $effect(()=>{if(suspended)untrack(snapshotFocus);if(!suspended)untrack(layout)});let titleInput=$state<HTMLInputElement>(),descriptionInput=$state<HTMLTextAreaElement>();
+ $effect(()=>{void split;if(suspended)untrack(snapshotFocus);if(!suspended)untrack(layout)});let titleInput=$state<HTMLTextAreaElement>(),descriptionInput=$state<HTMLTextAreaElement>();
  let editor=$state(''),more=$state(false),localError=$state(''),composing=$state(false);
  let copyPending=$state(false),copyMessage=$state('');let copyGeneration=0,disposed=false;
  onDestroy(()=>{disposed=true;copyGeneration++});
@@ -47,11 +47,13 @@
  const comments=$derived(board.comments.filter(c=>c.card_id===draft.id));
  const remote=$derived(review?.cards.find(c=>c.id===draft.id));
  const tools=[{id:'people',label:'负责人',path:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 8h5M19.5 5.5v5'},{id:'checklist',label:'添加清单条目',path:'m3 6 2 2 4-4M12 6h9M3 13h6M12 13h9M3 20h6M12 20h9'},{id:'comment',label:'发表评论',path:'M21 15a3 3 0 0 1-3 3H8l-5 4V5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10Z'},{id:'attachment',label:'添加附件',path:'m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9M6 14l8-8'},{id:'move',label:'移动卡片',path:'M12 3v18M3 12h18m-4-4 4 4-4 4M8 7l4-4 4 4M8 17l4 4 4-4'}];
- function growDescription(){if(descriptionInput){descriptionInput.style.height="0px";descriptionInput.style.height=descriptionInput.scrollHeight+2+"px"}}
- $effect(()=>{draft.description;untrack(()=>{void tick().then(growDescription)})});
- function layout(){
-  const vv=window.visualViewport;viewport={height:vv?.height||window.innerHeight,top:vv?.offsetTop||0,mobile:window.innerWidth<=640};
-  const shell=document.querySelector<HTMLElement>('.app-shell');if(shell&&!suspended)shell.inert=viewport.mobile;
+ function growDescription(){if(titleInput){titleInput.style.height="0px";titleInput.style.height=titleInput.scrollHeight+2+"px"}if(descriptionInput){descriptionInput.style.height="0px";descriptionInput.style.height=descriptionInput.scrollHeight+2+"px"}}
+ $effect(()=>{draft.title;draft.description;untrack(()=>{void tick().then(()=>{growDescription();layout()})})});
+ function layout(){if(titleInput){titleInput.style.height="0px";titleInput.style.height=titleInput.scrollHeight+2+"px"}
+  const vv=window.visualViewport;viewport={height:vv?.height||window.innerHeight,top:vv?.offsetTop||0,mobile:split?window.innerWidth<1180:window.innerWidth<=640};
+  const shell=document.querySelector<HTMLElement>('.app-shell'),content=panel?.closest<HTMLElement>('.content-layout');
+  if(content){const available=Math.max(0,(vv?.height||innerHeight)+(vv?.offsetTop||0)-content.getBoundingClientRect().top);content.style.setProperty('--content-height',available+'px')}
+  if(shell&&!suspended){shell.inert=false;for(const node of shell.children)if(node!==content)(node as HTMLElement).inert=viewport.mobile;const workspace=content?.querySelector<HTMLElement>('.workspace');if(workspace)workspace.inert=viewport.mobile}
   if(panel&&anchor)position=positionPanel(anchor.getBoundingClientRect(),panel.offsetWidth,panel.offsetHeight,window.innerWidth,window.innerHeight);
   if(viewport.mobile)void tick().then(()=>{
    const focused=document.activeElement as HTMLElement;
@@ -63,8 +65,8 @@
   });
  }
  onMount(()=>{
-  panel.focus({preventScroll:true});growDescription();layout();const observer=new ResizeObserver(layout);observer.observe(panel);
-  const outside=(e:PointerEvent)=>{if(suspended)return;const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.list-actions,.selection-toolbar,.view-options,.card,.archived-card,.calendar-view button,.calendar-view select,.completion-toast,.smart-row,.three-pane-nav,.function-rail,.mobile-navigation')&&!composing)onclose()};
+  panel.focus({preventScroll:true});growDescription();layout();const observer=new ResizeObserver(layout);observer.observe(panel);const globalStatus=document.querySelector('.global-status');if(globalStatus)observer.observe(globalStatus);
+  const outside=(e:PointerEvent)=>{if(suspended||split&&window.innerWidth>=1180)return;const el=e.target as HTMLElement;if(!panel.contains(el)&&!el.closest('.list-actions,.selection-toolbar,.view-options,.card,.archived-card,.calendar-view button,.calendar-view select,.completion-toast,.smart-row,.three-pane-nav,.function-rail,.mobile-navigation')&&!composing)onclose()};
   const keyboard=(e:KeyboardEvent)=>{
    if(suspended||e.isComposing||composing||(e.target as Element)?.closest('.view-options'))return;
    if(e.key==='Escape'){e.preventDefault();if(more)more=false;else onclose()}
@@ -74,7 +76,7 @@
    }
   };
   document.addEventListener('pointerdown',outside);document.addEventListener('keydown',keyboard);window.addEventListener('resize',layout);window.addEventListener('scroll',layout,true);window.visualViewport?.addEventListener('resize',layout);window.visualViewport?.addEventListener('scroll',layout);
-  return()=>{const shell=document.querySelector<HTMLElement>('.app-shell');if(shell&&!suspended)shell.inert=false;observer.disconnect();document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard);window.removeEventListener('resize',layout);window.removeEventListener('scroll',layout,true);window.visualViewport?.removeEventListener('resize',layout);window.visualViewport?.removeEventListener('scroll',layout);if(!suspended&&anchor?.isConnected)(anchor.matches('button')?anchor:anchor.querySelector<HTMLElement>('button'))?.focus({preventScroll:true})};
+  return()=>{const shell=document.querySelector<HTMLElement>('.app-shell');if(shell&&!suspended){shell.inert=false;shell.querySelectorAll<HTMLElement>('[inert]').forEach(el=>el.inert=false)}observer.disconnect();document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard);window.removeEventListener('resize',layout);window.removeEventListener('scroll',layout,true);window.visualViewport?.removeEventListener('resize',layout);window.visualViewport?.removeEventListener('scroll',layout);if(!suspended&&anchor?.isConnected)(anchor.matches('button')?anchor:anchor.querySelector<HTMLElement>('button'))?.focus({preventScroll:true})};
  });
  async function openEditor(id:string){if(editor==='schedule'&&!recoveryHold&&!await onblur())return;editor=editor===id?'':id;more=false;await tick();if(id==='description'){titleInput?.focus()}else body.querySelector<HTMLElement>(`[data-editor="${id}"] input,[data-editor="${id}"] textarea,[data-editor="${id}"] select`)?.focus();}
  function editorBlur(event?:FocusEvent){if((event?.relatedTarget as Element|null)?.closest('.view-options,.task-more'))return;return onblur()}
@@ -100,8 +102,8 @@
  async function renameItem(item:Board['checklist'][number]){const target=item.id,sent=itemTitle,generation=renameGeneration;if(await action({action:'checklist_update',item_id:target,title:sent,checked:item.checked})&&renaming===target&&renameGeneration===generation&&itemTitle===sent){renaming=0;itemTitle=''}}
 </script>
 {#snippet glyph(path:string)}<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={path}/></svg>{/snippet}
-{#if viewport.mobile}<div class="sheet-backdrop" aria-hidden="true"></div>{/if}
-<div bind:this={panel} inert={suspended} onfocusin={e=>{if((e.target as HTMLElement).matches('input,textarea,select'))lastEditor=e.target as HTMLElement}} class="task-panel" role="dialog" aria-modal={viewport.mobile?'true':undefined} aria-labelledby="card-heading" oncompositionstart={e=>{if(!(e.target as Element).matches(".content-title,.content-description"))auxiliaryComposition=true}} oncompositionend={()=>auxiliaryComposition=false} tabindex="-1" style:left={viewport.mobile?'8px':`${position.left}px`} style:top={viewport.mobile?`max(${viewport.top+12}px, env(safe-area-inset-top))`:`${position.top}px`} style:max-height={viewport.mobile?`calc(${viewport.height}px - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))`:'calc(100dvh - 24px)'}>
+{#if viewport.mobile}<div class="sheet-backdrop" class:content-backdrop={split} aria-hidden="true"></div>{/if}
+<div bind:this={panel} inert={suspended} onfocusin={e=>{if((e.target as HTMLElement).matches('input,textarea,select'))lastEditor=e.target as HTMLElement}} class="task-panel" class:task-panel-split={split&&!viewport.mobile} class:task-panel-sheet={split&&viewport.mobile} role={split&&!viewport.mobile?'region':'dialog'} aria-modal={viewport.mobile?'true':undefined} aria-labelledby="card-heading" oncompositionstart={e=>{if(!(e.target as Element).matches(".content-title,.content-description"))auxiliaryComposition=true}} oncompositionend={()=>auxiliaryComposition=false} tabindex="-1" style:left={viewport.mobile?'8px':`${position.left}px`} style:top={viewport.mobile?`max(${viewport.top+12}px, env(safe-area-inset-top))`:`${position.top}px`} style:max-height={viewport.mobile?`calc(${viewport.height}px - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))`:'calc(100dvh - 24px)'}>
  <div class="task-panel-top">
   <header class="task-panel-head"><span class="eyebrow">卡片 #{draft.id}</span><span class="task-save" role="status" aria-live="polite">{recoveryHold?'已恢复 · 未保存':newItem||comment||itemTitle||renaming?'有未发送输入':saveState==='saving'?'保存中…':saveState==='pending'?'待保存':saveState==='error'||saveState==='conflict'||saveState==='invalid'?'未保存':'已保存'}</span><button class="tool-button" aria-label="关闭卡片" title="关闭卡片 (Esc)" onclick={onclose}>{@render glyph('m6 6 12 12M6 18 18 6')}</button></header>
   <div class="task-toolbar" role="toolbar" aria-label="卡片顶部操作">
@@ -119,7 +121,7 @@
  </div>
  <div use:completionClearanceOwner class="task-panel-body" bind:this={body}>
   {#if review}<section class="conflict-review"><h3>最新版本 · {review.revision}</h3>{#if remote}<p><strong>{remote.title}</strong></p><p class="task-description">{remote.description||'无描述'}</p><p>负责人：{board.members.find(m=>m.user_id===remote.assignee_id)?.username||'未分配'} · 截止：{remote.due_date||'无'} · {remote.archived?'已归档':'未归档'}</p><p class="muted">继续会将本地修改的字段写入此版本；未修改字段不会被覆盖。评论和清单请检查下方最新内容。</p><button onclick={onrebase}>保留我的修改并重试</button>{:else}<p>卡片已不存在，请复制本地输入后返回。</p>{/if}<button onclick={oncancelreview}>返回继续编辑</button></section>{/if}
-  <label class="content-title-label"><span class="sr-only">卡片标题</span><input id="card-heading" class="content-title" class:completed={draft.completed} data-completion-phase={completionPhase} bind:this={titleInput} aria-label="卡片标题" maxlength="500" required bind:value={draft.title} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}/></label>
+  <label class="content-title-label"><span class="sr-only">卡片标题</span><textarea rows="1" id="card-heading" class="content-title" class:completed={draft.completed} data-completion-phase={completionPhase} bind:this={titleInput} aria-label="卡片标题" maxlength="500" required bind:value={draft.title} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}></textarea></label>
   {#if draft.skipped}<p class="muted">已跳过 · 历史任务，不能完成或修改日期</p>{/if}{#if draft.archived}<p class="muted">已归档{draft.completed?' · 已完成':''}</p>{/if}
   <textarea class="content-description" bind:this={descriptionInput} aria-label="描述" placeholder="添加描述…" rows="6" maxlength="20000" bind:value={draft.description} oninput={()=>onchange()} onblur={editorBlur} oncompositionstart={()=>composition(true)} oncompositionend={()=>composition(false)}></textarea>
   {#if editor==='schedule'}<ScheduleEditor value={draft.scheduleInput} completed={draft.completed||draft.skipped} skipped={draft.skipped} onchange={()=>onchange()} onblur={editorBlur}/>{/if}

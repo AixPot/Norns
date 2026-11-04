@@ -97,8 +97,8 @@ print(json.dumps({'format':v['fmt'],'task_ids':ids,'bytes':len(b),'sha256':hashl
  assert.equal(await unsent.inputValue(),raw);await unsent.focus();
  const heldPanel=await p.locator('.task-panel').elementHandle();
  await p.locator('.global-actions').getByRole('button',{name:'更多操作',exact:true}).focus();await p.keyboard.press('Enter');await p.getByRole('button',{name:'导出数据',exact:true}).focus();await p.keyboard.press('Enter');await p.getByRole('dialog',{name:'导出所选数据',exact:true}).waitFor();await p.setViewportSize({width:375,height:700});await p.getByRole('button',{name:'关闭导出',exact:true}).click();
- assert.equal(await unsent.inputValue(),raw);assert.equal(await p.locator('.app-shell').evaluate(el=>el.inert),true,'mobile sheet still owns shell');
- assert.equal(await p.locator('.task-panel').evaluate(el=>el.inert),false);
+ assert.equal(await unsent.inputValue(),raw);assert.equal(await p.locator('.workspace').evaluate(el=>el.inert),true,'mobile sheet keeps background inert');
+ assert.equal(await p.locator('.task-panel').evaluate(el=>!!el.closest('[inert]')),false);
  assert.equal(await heldPanel.evaluate(el=>el.isConnected),true);await p.getByText('恢复仅填入编辑器，尚未写入服务器',{exact:true}).waitFor();assert.deepEqual(prompts,[]);assert.equal(modalWrites,0);
  await p.setViewportSize({width:1440,height:1000});await unsent.fill('');await p.getByRole('button',{name:'丢弃恢复的修改',exact:true}).click();p.off('dialog',reject);p.off('request',writes);
  await p.getByRole('button',{name:'关闭卡片',exact:true}).click();await p.locator('.task-panel').waitFor({state:'hidden'});checks.push(stage);

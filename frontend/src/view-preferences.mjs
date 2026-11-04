@@ -24,7 +24,20 @@ export function createViewPreferences({accountId,storage}={}){
  const validLayout=layout=>layout===undefined||layout==='wide'||layout==='narrow';
  const key=(s,layout)=>layout===undefined?`norns.view-preferences.v1.account.${accountId}.${s.surface}.${encodeURIComponent(s.scope)}`:`norns.view-preferences.v2.account.${accountId}.${s.surface}.${encodeURIComponent(s.scope)}.${layout}`;
  const read=(k,version)=>{try{const raw=(storage===undefined?globalThis.localStorage:storage)?.getItem(k);if(raw){const data=JSON.parse(raw);if(shape(data,['version','group','sort'])&&data.version===version&&validValue({group:data.group,sort:data.sort}))return {group:data.group,sort:data.sort}}}catch{}return null};
+ const detailKey=`norns.view-preferences.v1.account.${accountId}.smart.inbox.detail`;
+ let detail;
  return {
+  inboxDetail(){
+   if(!validAccount)return 'drawer';
+   if(detail!==undefined)return detail;
+   try{const data=JSON.parse((storage===undefined?globalThis.localStorage:storage)?.getItem(detailKey)||'null');if(shape(data,['version','mode'])&&data.version===1&&['drawer','split'].includes(data.mode))detail=data.mode}catch{}
+   return detail??='drawer';
+  },
+  setInboxDetail(mode){
+   if(!validAccount||!['drawer','split'].includes(mode))return false;
+   detail=mode;try{(storage===undefined?globalThis.localStorage:storage)?.setItem(detailKey,JSON.stringify({version:1,mode}))}catch{}
+   return true;
+  },
   get(scope,layout){
    if(!validAccount||!validScope(scope)||!validLayout(layout))return defaults();
    const k=key(scope,layout);if(memory.has(k))return {...memory.get(k)};

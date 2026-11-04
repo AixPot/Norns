@@ -80,4 +80,14 @@
  .capture-entry>.capture-secondary:disabled{cursor:default}.capture-entry>.capture-secondary[aria-busy=true]{cursor:wait}.capture-entry>.capture-secondary:not(:disabled):hover{background:var(--border);color:var(--text)}
  .task-capture{display:block;min-width:0}.capture-entry{display:flex;gap:8px;min-width:0}.capture-entry input{flex:1;min-width:0;width:0}.capture-entry>button{flex:none}.capture-preview{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:8px;font-size:13px;color:var(--secondary)}.capture-date{font-variant-numeric:tabular-nums}.capture-preview button{font-size:13px;min-height:36px;padding:4px 8px;background:transparent;color:var(--accent-text);border:1px solid var(--border);border-radius:8px}.capture-adopted{color:var(--accent-text)}.capture-title{flex-basis:100%;overflow-wrap:anywhere;color:var(--text)}.capture-message{margin:8px 0 0;font-size:13px;color:var(--secondary)}
  @media(max-width:800px){.capture-preview button{min-height:44px}:global(.smart-tasks) .quick-inbox .capture-entry{gap:5px}:global(.smart-tasks) .quick-inbox .capture-entry input{padding-left:10px;padding-right:10px}:global(.smart-tasks) .quick-inbox .capture-entry>.capture-secondary{gap:3px;padding:6px;min-width:44px}}
+
+ :global(.smart-tasks) .quick-inbox .capture-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:13px 15px 10px;border:1px solid var(--border);border-radius:13px;margin-bottom:4px}
+ :global(.smart-tasks) .quick-inbox .capture-entry:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+ :global(.smart-tasks) .quick-inbox .capture-entry input{grid-column:1/-1;width:100%;font-size:16px;border:0;background:transparent;padding:0 2px;min-height:40px;outline:none;box-shadow:none}
+ :global(.smart-tasks) .quick-inbox .capture-entry>.capture-secondary{border:0;background:transparent;font-size:12px;padding:7px 10px}
+ :global(.smart-tasks) .quick-inbox .capture-entry>button[type=button]{grid-row:2;grid-column:1;justify-self:start;color:var(--secondary)}
+ :global(.smart-tasks) .quick-inbox .capture-entry>button:not([type=button]){grid-row:2;grid-column:2;min-width:90px;background:var(--accent);color:var(--on-accent)}
+ :global(.smart-tasks) .quick-inbox .capture-entry>button:not([type=button]):disabled{background:var(--surface-muted);color:var(--secondary)}
+ :global(.smart-tasks) .quick-inbox .capture-entry>.capture-secondary:not(:disabled):hover{background:var(--accent-soft);color:var(--accent-text)}
+ :global(.smart-tasks) .quick-inbox{margin-bottom:22px}
 </style>
