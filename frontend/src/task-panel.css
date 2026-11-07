@@ -41,3 +41,14 @@
 
 .task-panel-body{--completion-base:20px;padding-bottom:max(var(--completion-base),var(--completion-clearance,0px))}
 @media(max-width:640px){.task-panel-body{--completion-base:18px;padding-bottom:max(var(--completion-base),var(--completion-clearance,0px))}}
+
+/* Readable task actions, without changing the existing toolbar/editor owners. */
+.task-panel-bottom .tool-button{width:auto;gap:6px;padding:8px 10px;min-height:44px;font-size:12px;white-space:nowrap}
+.task-panel-bottom .tool-button svg{flex:none;width:17px;height:17px}
+.task-more-menu{width:252px;max-width:calc(100vw - 40px);padding:6px}
+.task-more-menu button{min-height:44px;line-height:1.4}
+.task-more-menu .summary-scope{margin:0 8px 8px;font-size:12px;line-height:1.5;color:var(--secondary)}
+.task-more-menu .summary-scope+button{border-top:1px solid var(--border);border-radius:0}
+@media(max-width:640px){.task-panel-bottom{gap:4px;padding-inline:10px}.task-panel-bottom .tool-button{padding-inline:8px}.task-panel-bottom>button:not(.tool-button){margin-left:auto;padding-inline:8px;font-size:12px}}
+
+.task-panel .tool-button[data-tooltip][aria-expanded=true]:after{display:none}

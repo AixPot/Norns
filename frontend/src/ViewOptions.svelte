@@ -14,7 +14,7 @@
  {#if open}<div id="display-options" class="view-options-popover" role="region" aria-label="显示选项">
  {#if ongroup}<label>分组<select aria-label="显示分组" value={value.group} onchange={e=>choose('group',e)}><option value="default">默认</option><option value="none">不分组</option><option value="date">按日期</option><option value="board">按看板</option></select></label>{/if}
  <label>排序<select aria-label="显示排序" value={value.sort} onchange={e=>choose('sort',e)}><option value="manual">手动顺序</option><option value="date">按日期</option></select></label>
- {#if detailMode!==undefined}{#if !narrow}<label>详情展示方式<select aria-label="详情展示方式" value={detailMode} onchange={e=>ondetail?.(e.currentTarget.value)}><option value="drawer">浮动详情（当前方式）</option><option value="split">右侧分栏详情</option></select></label>{/if}<p>仅收集箱：宽屏可在右侧持续编辑；空间不足时自动使用抽屉，保留桌面选择。</p>{/if}
- <p>当前：{narrow?'手机／窄屏':'桌面／宽屏'}，两种宽度分别记忆。仅在此浏览器对当前账号生效，不改变共享顺序。</p>
+ {#if detailMode!==undefined}{#if !narrow}<label>详情展示方式<select aria-label="详情展示方式" value={detailMode} onchange={e=>ondetail?.(e.currentTarget.value)}><option value="drawer">浮动详情</option><option value="split">右侧分栏详情</option></select></label>{/if}<p>分栏仅用于宽屏收集箱；窄屏自动使用抽屉。</p>{/if}
+ <p>{narrow?'窄屏':'宽屏'}偏好（宽窄屏分别记忆）· 仅当前账号与浏览器，不改变共享顺序。</p>
  </div>{/if}
 </div>
