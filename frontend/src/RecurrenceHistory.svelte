@@ -1,11 +1,33 @@
 <script lang="ts">
  import {onMount,untrack} from 'svelte';
  import type {Card} from './types';
- let {title,unskipOnly=false,blocked=false,isCurrent,onread,onunskip,onopen,onverify,onclose}:{title:string;unskipOnly?:boolean;blocked?:boolean;isCurrent:()=>boolean;onread:()=>Promise<{board_id:number;revision:number;cards:Card[]}>;onunskip:(id:number)=>Promise<void>;onopen:(card:Card)=>Promise<void>;onverify:()=>Promise<string>;onclose:()=>void}=$props();
+ let {title,unskipOnly=false,blocked=false,isCurrent,onread,onunskip,onopen,onverify,onclose}:{title:string;unskipOnly?:boolean;blocked?:boolean;isCurrent:()=>boolean;onread:(subjectId?:number)=>Promise<{board_id:number;revision:number;cards:Card[]}>;onunskip:(id:number)=>Promise<void>;onopen:(card:Card)=>Promise<void>;onverify:()=>Promise<string>;onclose:()=>void}=$props();
  const current=untrack(()=>isCurrent);
- let rows=$state<Card[]>([]),pending=$state(false),message=$state(''),unknown=$state(false),loaded=$state(false),panel:HTMLDivElement,alive=true;
- async function read(){if(pending||blocked||unknown||!current())return;pending=true;message='';try{const result=await onread();if(alive&&current()){rows=result.cards;loaded=true}}catch(e){if(alive&&current())message=e instanceof Error?e.message:'读取失败'}finally{if(alive&&current())pending=false}}
- async function undo(id:number){if(pending||blocked||unknown||!current())return;pending=true;message='';try{await onunskip(id);if(alive&&current()){message='已撤销跳过';loaded=false}}catch(e){if(alive&&current()){message=e instanceof Error?e.message:'撤销失败';if(!(e as any).status||(e as any).status>=500)unknown=true}}finally{if(alive&&current())pending=false}if(!unknown&&!loaded)await read()}
+ let rows=$state<Card[]>([]),pending=$state(false),message=$state(''),unknown=$state(false),loaded=$state(false),undone=$state(false),panel:HTMLDivElement,alive=true;
+ let historySubjectId:number|undefined;
+ async function loadHistory(){
+  try{const result=await onread(historySubjectId);if(alive&&current()){rows=result.cards;loaded=true}}
+  catch(e){if(alive&&current())message=e instanceof Error?e.message:'读取失败'}
+ }
+ async function read(){
+  if(pending||blocked||unknown||!current())return;
+  pending=true;message='';
+  try{await loadHistory()}finally{if(alive&&current())pending=false}
+ }
+ async function undo(id:number){
+  if(pending||blocked||unknown||!current())return;
+  pending=true;message='';undone=false;
+  try{
+   try{await onunskip(id)}catch(e){
+    if(alive&&current()){message=e instanceof Error?e.message:'撤销失败';if(!(e as any).status||(e as any).status>=500)unknown=true}
+    return;
+   }
+   if(!alive||!current())return;
+   // Undo may withdraw the card that opened this dialog. The restored occurrence still identifies the same chain.
+   historySubjectId=id;undone=true;rows=[];loaded=false;
+   await loadHistory();
+  }finally{if(alive&&current())pending=false}
+ }
  async function open(card:Card){if(pending||blocked||unknown)return;pending=true;try{await onopen(card)}catch(e){if(alive&&current())message=e instanceof Error?e.message:'打开失败'}finally{if(alive&&current())pending=false}}
  async function verify(){if(pending)return;pending=true;try{const value=await onverify();if(alive&&current())message=value}catch{if(alive&&current())message='暂时无法核对，保持写入阻塞'}finally{if(alive&&current())pending=false}}
  function close(){if(!pending)onclose()}
@@ -21,6 +43,7 @@
  {#if blocked||unknown}<p>写入结果未知；关闭或重新打开不会解除锁，也不会自动重发。</p><button disabled={pending} onclick={verify}>只读核对结果</button>
  {:else}<p>只列服务器真实记录，含已归档。下列日期是计划日期，不是完成或跳过时间。</p><button disabled={pending} onclick={read}>重新读取重复记录</button>
  {#each rows as card (card.id)}<article data-history-id={card.id}><strong>#{card.id} · {card.skipped?'已跳过':card.completed?'已完成':'未完成'}{card.archived?' · 已归档':''}</strong><p>{card.schedule?.start_date||card.due_date||'无计划日期'} {card.schedule?.start_time||''}{card.schedule?.end_date?` 至 ${card.schedule.end_date}`:''} {card.schedule?.end_time||''}</p><p>{card.title}</p><button disabled={pending} onclick={()=>open(card)}>打开历史 #{card.id}</button>{#if card.skipped}<button disabled={pending} onclick={()=>undo(card.id)}>撤销跳过 #{card.id}</button>{/if}</article>{:else}{#if loaded}<p>没有重复记录。</p>{/if}{/each}{/if}
+ {#if undone}<p role="status">已撤销跳过</p>{/if}
  {#if message}<p role="status">{message}</p>{/if}
  <button disabled={pending} onclick={close}>关闭</button>
 </div></div>

@@ -587,9 +587,9 @@
   if(!(boardRef?.overlayReady()??true)||boardRef?.hasPending()){error='请先保存或清空列表与快速录入草稿，再移除列表。';return;}
   nextReturn=detailRef?.snapshotFocus();nextModal=nextTicket('remove',id);
  }
- async function readHistory(t:NextTicket){
+ async function readHistory(t:NextTicket,subjectId=t.subjectId){
   if(!ownsNext(t))throw new Error('操作已切换');
-  const result=await api<{board_id:number;revision:number;cards:Card[]}>(`/boards/${t.boardId}/cards/${t.subjectId}/history`);
+  const result=await api<{board_id:number;revision:number;cards:Card[]}>(`/boards/${t.boardId}/cards/${subjectId}/history`);
   if(!ownsNext(t)||result.board_id!==t.boardId)throw new Error('身份或看板已变化，旧历史未应用');return result;
  }
  async function unskipNext(t:NextTicket,id=t.subjectId){
@@ -670,10 +670,10 @@
 {#if bulkOpen&&user&&bulkSource&&bulkPreview}{#key user.id}<BulkActions bind:this={bulkRef} source={bulkSource} originals={bulkPreview.originals} onrefresh={refreshBulk} onsubmit={submitBulk} onclose={closeBulk}/>{/key}{/if}
 {#if nextModal&&user}{#key nextModal.serial}
  {@const t=nextModal}
- {#if uncertainScope}<RecurrenceHistory title={t.card?.title||t.source?.title||'未知写入'} blocked={true} isCurrent={()=>ownsNext(t)} onread={()=>readHistory(t)} onunskip={id=>unskipNext(t,id)} onopen={card=>openHistorical(t,card)} onverify={()=>verifyNext(t)} onclose={closeNext}/>
+ {#if uncertainScope}<RecurrenceHistory title={t.card?.title||t.source?.title||'未知写入'} blocked={true} isCurrent={()=>ownsNext(t)} onread={subjectId=>readHistory(t,subjectId)} onunskip={id=>unskipNext(t,id)} onopen={card=>openHistorical(t,card)} onverify={()=>verifyNext(t)} onclose={closeNext}/>
  {:else if t.kind==='skip'}<SkipDialog cardId={t.subjectId} title={t.card?.title||''} mode={t.card?.schedule?.repeat?.mode==='relative'?'relative':'calendar'} isCurrent={()=>ownsNext(t)} onpreview={()=>nextPreview(t)} oncommit={body=>commitNext(t,body)} onverify={()=>verifyNext(t)} onclose={closeNext}/>
  {:else if t.kind==='remove'}<ListDeleteDialog boardId={t.boardId} source={t.source} lists={t.lists} isCurrent={()=>ownsNext(t)} onpreview={target=>nextPreview(t,target)} oncommit={body=>commitNext(t,body)} onverify={()=>verifyNext(t)} onclose={closeNext}/>
- {:else}<RecurrenceHistory title={t.card?.title||''} unskipOnly={t.kind==='unskip'} blocked={!!uncertainScope} isCurrent={()=>ownsNext(t)} onread={()=>readHistory(t)} onunskip={id=>unskipNext(t,id)} onopen={card=>openHistorical(t,card)} onverify={()=>verifyNext(t)} onclose={closeNext}/>{/if}
+ {:else}<RecurrenceHistory title={t.card?.title||''} unskipOnly={t.kind==='unskip'} blocked={!!uncertainScope} isCurrent={()=>ownsNext(t)} onread={subjectId=>readHistory(t,subjectId)} onunskip={id=>unskipNext(t,id)} onopen={card=>openHistorical(t,card)} onverify={()=>verifyNext(t)} onclose={closeNext}/>{/if}
 {/key}{/if}
 
 {#snippet selectionControls()}
