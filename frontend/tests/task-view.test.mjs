@@ -56,6 +56,16 @@ test('board projection preserves real columns including empty, filters archived 
  assert.equal(view.columns[0].list,board.lists[2]);assert.deepEqual(board,before);
  assert.deepEqual(ids(projectBoardView(board).columns[0].tasks),[2,3,5]);
 });
+test('board completion is display-only; undo uses the latest physical position',async()=>{
+ const {projectBoardView}=await import('../src/task-view.mjs');
+ const cards=[{id:3,list_id:1,position:2,completed:false},{id:1,list_id:1,position:0,completed:true},{id:2,list_id:1,position:1,completed:false}];
+ const order=cards=>ids(projectBoardView({lists:[{id:1}],cards}).columns[0].tasks);
+ const before=structuredClone(cards);
+ assert.deepEqual(order(cards),[2,3,1]);assert.deepEqual(cards,before);
+ assert.deepEqual(order(cards.map(c=>c.id===1?{...c,completed:false}:c)),[1,2,3]);
+ assert.deepEqual(order(cards.map(c=>c.id===1?{...c,completed:false,position:4}:c)),[2,3,1]);
+ assert.deepEqual(order([{id:5,list_id:1,position:0,completed:true},{id:4,list_id:1,position:0,completed:true}]),[4,5]);
+});
 test('missing position metadata falls back deterministically to board/list/card IDs',async()=>{
  const {projectTaskView}=await import('../src/task-view.mjs');
  const tasks=[{id:3,board_id:2,list_id:1},{id:2,board_id:1,list_id:2},{id:4,board_id:1,list_id:1},{id:1,board_id:1,list_id:1}];

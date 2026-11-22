@@ -1,4 +1,5 @@
 // Slots carry neighbor identities, never partitioned display indices.
+import {physicalCards} from './completion-view.mjs';
 const sorted=items=>[...items].sort((a,b)=>a.position-b.position||a.id-b.id);
 export const slotKey=slot=>slot?`${slot.listId??'lists'}:${slot.completed??''}:${slot.afterId??''}:${slot.beforeId??''}`:'';
 const slots=(items,extra)=>Array.from({length:items.length+1},(_,i)=>({...extra,beforeId:items[i]?.id??null,afterId:items[i-1]?.id??null}));
@@ -21,7 +22,7 @@ export function resolveMove(board,intent){
   if(index<0||board.lists[index]?.id===sourceId)return null;
   return {action:'list_move',list_id:sourceId,index};
  }
- const moving=board.cards.find(c=>c.id===sourceId),physical=sorted(board.cards.filter(c=>c.list_id===slot.listId&&!c.archived&&c.id!==sourceId));
+ const moving=board.cards.find(c=>c.id===sourceId),physical=physicalCards(board.cards,slot.listId,sourceId);
  const index=slot.beforeId!==null?physical.findIndex(c=>c.id===slot.beforeId):slot.afterId!==null?physical.findIndex(c=>c.id===slot.afterId)+1:moving.completed?physical.length:0;
  if(index<0)return null;
  const result=[...physical];result.splice(index,0,moving);

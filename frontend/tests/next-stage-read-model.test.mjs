@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {projectTaskView,projectBoardView} from '../src/task-view.mjs';
 import {groupSmartTasks} from '../src/task-groups.mjs';
-import {displayCards} from '../src/completion-view.mjs';
 import {bulkSafety} from '../src/task-selection.mjs';
 import {projectCalendar} from '../src/calendar.mjs';
 import {taskSummary} from '../src/task-summary.mjs';
@@ -21,7 +20,6 @@ test('skipped is a separate search history group, never active or complete',()=>
  assert.match(taskSummary({title:'board',lists:[{id:1,title:'list'}],cards:rows,members:[],checklist:[]},3),/状态：已跳过 · 未归档/);
  assert.equal(new URLSearchParams(taskQuery({status:'complete'})).get('status'),'complete');
  assert.deepEqual(projectBoardView({lists:[{id:1}],cards:rows}).columns[0].tasks.map(t=>t.id),[1,2]);
- assert.deepEqual(displayCards(rows,1).map(t=>t.id),[1,2]);
  assert.deepEqual(groupSmartTasks(rows,'mine','2026-10-26')[0].tasks.map(t=>t.id),[1]);
 });
 test('bulk cannot complete or schedule skipped originals but may move history',()=>{

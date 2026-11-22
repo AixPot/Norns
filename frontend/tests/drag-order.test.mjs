@@ -11,6 +11,13 @@ test('group tail maps identities to physical order rather than visual index',()=
  assert.equal(cardSlots(board,1,1).length,1);
  assert.equal(move(board,1,cardSlots(board,1,1)[0]).index,2); // sole completed slot still has a physical boundary
 });
+test('drop resolves visible anchors to physical positions for both completion groups',()=>{
+ const b={...board,cards:[...board.cards,c(5,2,1)]};
+ const before=(sourceId,beforeId)=>cardSlots(b,sourceId,1).find(s=>s.beforeId===beforeId);
+ assert.equal(move(b,5,before(5,2)).index,1); // visual index 0, physical index 1
+ assert.equal(move(b,4,before(4,1)).index,0); // completed anchor is visually last
+ assert.equal(move(b,5,before(5,null)).index,3);
+});
 test('empty and opposite-only destinations preserve completed and give the right boundary',()=>{
  assert.equal(move(board,2,cardSlots(board,2,2)[0]).index,0);
  assert.equal(move(board,1,cardSlots(board,1,3)[0]).index,0);

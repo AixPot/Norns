@@ -11,7 +11,7 @@ import {groupSmartTasks} from './task-groups.mjs';
  * Group headings do not change matching/filtering; caller supplies server results.
  * Completed results from a separate request may be concatenated before projection.
  * Example: projectTaskView(response.tasks, {route:'today', today:'2026-10-22',
- *   ...preferences.get({surface:'smart',scope:'today'})}).
+ *   ...preferences.get({surface:'smart',scope:'today'},'wide')}).
  */
 export function projectTaskView(tasks,{route='search',today,group='default',sort='manual'}={}){
  const compare=sort==='date'?byDate:physical;
@@ -40,7 +40,7 @@ function byDate(a,b){const x=effectiveDate(a),y=effectiveDate(b);return (x&&y?x.
 /** Board projection returns {columns:[{list,tasks}]}; real list records, including
  * empty columns, are retained and ordered by position/id. tasks excludes archived
  * cards and concatenates sorted open then sorted completed cards in each column.
- * Example: projectBoardView(board, preferences.get({surface:'board',scope:String(board.id)})).
+ * Example: projectBoardView(board, preferences.get({surface:'board',scope:String(board.id)},'wide')).
  * Only sort applies: grouping never replaces a board's persisted list columns.
  */
 export function projectBoardView(board,{sort='manual'}={}){

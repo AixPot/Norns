@@ -3,7 +3,7 @@
  import SkipDialog from './SkipDialog.svelte';
  import ListDeleteDialog from './ListDeleteDialog.svelte';
  import RecurrenceHistory from './RecurrenceHistory.svelte';
- import {actionFailure} from './occurrence-skip.mjs';
+ import {actionFailure,unskipMutation} from './occurrence-skip.mjs';
  import PwaStatus from './PwaStatus.svelte';
  import PwaInstall from './PwaInstall.svelte';
  import {createCompletionMotion} from "./completion-motion.mjs";
@@ -597,7 +597,7 @@
   const fresh=await api<Board>(`/boards/${t.boardId}`);
   if(!ownsNext(t))throw new Error('操作已切换');
   board=fresh;writer=null;
-  try{await commitNext(t,{action:'card_unskip',card_id:id,expected_revision:fresh.revision})}catch(e){if((e as any).code==='successor_touched')throw new ApiError(409,actionFailure(e,'unskip').message,'successor_touched');throw e}
+  try{await commitNext(t,unskipMutation(id,fresh.revision))}catch(e){if((e as any).code==='successor_touched')throw new ApiError(409,actionFailure(e,'unskip').message,'successor_touched');throw e}
  }
  const inboxSplit=$derived(view==='smart'&&smartRoute==='inbox'&&!inboxArchive&&inboxDetailMode==='split');
  async function openHistorical(t:NextTicket,card:Card){

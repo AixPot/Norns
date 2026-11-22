@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 const module = await import('../src/autosave.mjs').catch(()=>({}));
+import {createMutationQueue} from '../src/mutation-queue.mjs';
+import {acceptSnapshot} from '../src/collaboration.mjs';
 const tick=()=>new Promise(r=>setImmediate(r));
 test('autosave serializes in-flight input and flush drains latest revision',async()=>{
  assert.equal(typeof module.createAutosave,'function','autosave controller must exist');
@@ -29,12 +31,36 @@ test('failure retains input, blocks flush and retries only explicitly',async()=>
  value.title='more typing';save.change();assert.equal(await save.flush(),false);assert.equal(calls,1);assert.ok(states.includes('error'));
  fail=false;assert.equal(await save.retry(),true);assert.equal(calls,2);assert.equal(save.pending(),false);save.stop();
 });
-test('conflict does not silently rebase; explicit baseline preserves local changes',async()=>{
- let value={title:'old',description:'old'},conflict=true;const revisions=[];let sent;
- const save=module.createAutosave({read:()=>({...value}),revision:1,write:async(d,r)=>{sent=d;revisions.push(r);if(conflict)throw Object.assign(Error('conflict'),{status:409});return r+1},delay:10000});
- value.description='local';save.change();assert.equal(await save.flush(),false);assert.deepEqual(revisions,[1]);
- value.title='remote';conflict=false;save.rebaseBaseline({title:'remote',description:'remote'},8);
- assert.equal(await save.retry(),true);assert.deepEqual(sent,{title:'remote',description:'local'});assert.deepEqual(revisions,[1,8]);save.stop();
+test('polled revision does not rebase a dirty draft; 409 retains input until explicit review and retry',async t=>{
+ const initial={title:'old',description:'old'},draft={...initial};
+ let displayed={id:1,revision:4,fields:initial},server=displayed,state;
+ const sent=[];
+ const queue=createMutationQueue({revision:()=>displayed.revision,apply:snapshot=>{displayed=acceptSnapshot(displayed,snapshot)}});
+ const save=module.createAutosave({read:()=>({...draft}),revision:displayed.revision,delay:10000,onstate:s=>{state=s},write:async(fields,baseline)=>{
+  const result=await queue.run(async revision=>{
+   sent.push({revision,fields});
+   if(revision!==server.revision)throw Object.assign(Error('conflict'),{status:409});
+   return server={...server,revision:revision+1,fields};
+  },baseline);
+  return result.revision;
+ }});
+ t.after(()=>save.stop());
+ draft.description='第二行\n草稿';save.change();
+ server={id:1,revision:8,fields:{title:'remote',description:'remote'}};
+ displayed=acceptSnapshot(displayed,server);
+ assert.equal(displayed.revision,8);
+ assert.equal(await save.flush(),false);
+ assert.deepEqual(draft,{title:'old',description:'第二行\n草稿'});
+ assert.equal(save.revision(),4);assert.equal(state,'conflict');assert.equal(save.pending(),true);
+ assert.deepEqual(sent,[{revision:4,fields:draft}]);
+ draft.description+='！';save.change();
+ assert.equal(await save.flush(),false);assert.equal(sent.length,1);assert.equal(server.fields.description,'remote');
+ // The editor adopts the reviewed remote value for the untouched field only.
+ await queue.idle();queue.reset();
+ draft.title=displayed.fields.title;save.rebaseBaseline(displayed.fields,displayed.revision);
+ assert.equal(await save.retry(),true);
+ assert.deepEqual(sent[1],{revision:8,fields:{title:'remote',description:'第二行\n草稿！'}});
+ assert.deepEqual(server.fields,draft);assert.equal(save.revision(),9);assert.equal(save.pending(),false);
 });
 test('composition suppresses debounce/blur until final input; stopped owner cannot write',async()=>{
  let value={title:'old'},calls=0;
